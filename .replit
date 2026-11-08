@@ -1,0 +1,1 @@
+run = "make -j4 && ./bitcoin -datadir=./data"
