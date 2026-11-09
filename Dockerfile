@@ -1,7 +1,7 @@
-# Default base matches the tested stack (OpenSSL 1.1.1 + BerkeleyDB 5.3).
-# Try OpenSSL 3:  docker build --build-arg BASE=debian:bookworm-slim .
+# Default base: Debian 12 (OpenSSL 3 + BerkeleyDB 5.3), same stack as the Ubuntu CI jobs.
 # Run the test suite during build:  docker build --build-arg RUN_TESTS=1 .
-ARG BASE=debian:bullseye-slim
+# Other bases may use different runtime package names (e.g. libssl3t64, libdb5.3++t64).
+ARG BASE=debian:bookworm-slim
 
 FROM ${BASE} AS build
 RUN apt-get update && apt-get install -y --no-install-recommends \
@@ -15,7 +15,7 @@ ARG RUN_TESTS=0
 RUN if [ "$RUN_TESTS" = "1" ]; then bash test.sh; fi
 
 FROM ${BASE}
-RUN apt-get update && apt-get install -y --no-install-recommends libdb5.3++ openssl \
+RUN apt-get update && apt-get install -y --no-install-recommends libdb5.3++ libssl3 \
     && rm -rf /var/lib/apt/lists/*
 COPY --from=build /src/bitcoin /usr/local/bin/bitcoin
 VOLUME /data
