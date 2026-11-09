@@ -51,15 +51,14 @@ inline int WSACleanup() { return 0; }
 #ifndef FIONBIO_COMPAT
 #define FIONBIO_COMPAT 1
 #endif
-inline int ioctlsocket_nb(SOCKET s, int* pn)
+inline int ioctlsocket_nb(SOCKET s, int nb)
 {
     int fl = fcntl(s, F_GETFL, 0);
     if (fl < 0) return -1;
-    fl = (*pn ? (fl | O_NONBLOCK) : (fl & ~O_NONBLOCK));
+    fl = (nb ? (fl | O_NONBLOCK) : (fl & ~O_NONBLOCK));
     return fcntl(s, F_SETFL, fl);
 }
-#define ioctlsocket(s, cmd, pn) ioctlsocket_nb((s), (int*)(pn))
-#define u_long          int
+#define ioctlsocket(s, cmd, pn) ioctlsocket_nb((s), (int)*(pn))
 
 // ---- misc
 #define __forceinline   inline

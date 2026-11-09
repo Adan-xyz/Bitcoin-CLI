@@ -16,3 +16,12 @@ jobs:
     steps:
       - uses: actions/checkout@v5
       - run: docker build --build-arg RUN_TESTS=1 -t bitcoin-cli-test .
+  macos:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v5
+      - run: brew install openssl@3 berkeley-db@5
+      - run: |
+          export PKG_CONFIG_PATH="$(brew --prefix openssl@3)/lib/pkgconfig"
+          export MAKEARGS="DB_INC=$(brew --prefix berkeley-db@5)/include DB_LIBDIR=$(brew --prefix berkeley-db@5)/lib"
+          bash test.sh

@@ -5,7 +5,7 @@ cd "$(dirname "$0")"
 PASS=0; FAIL=0
 ok(){ echo "PASS: $1"; PASS=$((PASS+1)); }
 bad(){ echo "FAIL: $1"; FAIL=$((FAIL+1)); }
-T=$(mktemp -d)
+T=$(mktemp -d 2>/dev/null || mktemp -d -t btccli)
 pkill -f "bitcoin -easy" 2>/dev/null; sleep 1
 cleanup(){ exec 3>&- 4>&- 2>/dev/null; pkill -f "bitcoin -easy" 2>/dev/null; }
 trap cleanup EXIT
