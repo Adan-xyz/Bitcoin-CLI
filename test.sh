@@ -56,14 +56,23 @@ done
 [ $synced = 1 ] && ok "sync n2 == n1 at height $h1" || bad "sync (n1=$h1 n2=$h2)"
 b1=$(cmd n1 getinfo | awk '/^bestblock/{print $3}'); b2=$(cmd n2 getinfo | awk '/^bestblock/{print $3}')
 [ -n "$b1" ] && [ "$b1" = "$b2" ] && ok "same best block hash" || bad "best block differs"
+[ "$(cmd n1 getblockcount | tail -1)" = "$h1" ] && ok "getblockcount" || bad "getblockcount"
+bh0=$(cmd n1 getblockhash 0 | tail -1)
+cmd n1 getblock "$bh0" | grep -q "^height *: 0" && ok "getblockhash/getblock genesis" || bad "getblock genesis ($bh0)"
+cmd n2 getpeerinfo | grep -q "version=" && ok "getpeerinfo" || bad "getpeerinfo"
 
 addr=$(cmd n2 getnewaddress | tail -1)
 echo "$addr" | grep -Eq '^1[1-9A-HJ-NP-Za-km-z]{25,34}$' && ok "address $addr" || bad "address format: $addr"
+cmd n2 validateaddress "$addr" | grep -q "^ismine *: yes" && ok "validateaddress (own)" || bad "validateaddress own"
+cmd n1 validateaddress "$addr" | grep -q "^ismine *: no" && ok "validateaddress (foreign)" || bad "validateaddress foreign"
 
 sendout=$(cmd n1 send "$addr" 5)
 echo "$sendout" | grep -q "^txid" && ok "send accepted" || { bad "send: $sendout"; }
 cmd n1 gen on >/dev/null
 waitfor 40 n2 5.00 && ok "n2 received 5.00" || bad "n2 balance $(bal n2) (expected 5.00)"
+txid=$(echo "$sendout" | awk '/^txid/{print $2}')
+cmd n2 gettransaction "$txid" | grep -q "^net *: +5.00" && ok "gettransaction" || bad "gettransaction ($txid)"
+cmd n1 backupwallet "$T/wallet.bak" | grep -q "backed up" && [ -s "$T/wallet.bak" ] && ok "backupwallet" || bad "backupwallet"
 cmd n1 gen off >/dev/null; sleep 3
 h1=$(blocks n1); hb=$(blocks n2)
 

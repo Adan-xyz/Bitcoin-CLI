@@ -76,7 +76,15 @@ Prompt commands:
 | `listtransactions [n]` | recent wallet transactions |
 | `gen [on\|off]` | start/stop mining |
 | `addnode <ip[:port]>` | connect to a peer |
-| `peers` | list connected peers |
+| `peers` / `getpeerinfo` | list connected peers (address, direction, version) |
+| `getblockcount` | height of the best chain |
+| `getblockhash <height>` | hash of the block at a height |
+| `getblock <height\|hash>` | block details and its transactions |
+| `gettransaction <txid>` | wallet transaction details |
+| `getdifficulty` | current difficulty |
+| `validateaddress <addr>` | check an address and whether it is yours |
+| `setlabel <addr> <label>` | name an address |
+| `backupwallet <path>` | copy `wallet.dat` to a file or directory |
 | `stop` | shut down (also `quit`, `exit`, Ctrl-C) |
 
 Logs go to `<datadir>/debug.log` (add `-printtoconsole` to also print them).
@@ -98,7 +106,7 @@ Never mix an `-easy` data directory with a normal one; the node refuses to start
 bash test.sh
 ~~~
 
-Builds from scratch, mines, syncs two nodes, sends coins, restarts both and checks that the wallet and chain survive. It takes a few minutes and uses full CPU. Expected last line: `passed=13 failed=0`. If your libraries are in custom paths, set `MAKEARGS`, for example `MAKEARGS="DB_INC=... DB_LIBDIR=..." bash test.sh`.
+Builds from scratch, mines, syncs two nodes, sends coins, restarts both and checks that the wallet and chain survive. It takes a few minutes and uses full CPU. Expected last line: `passed=20 failed=0`. If your libraries are in custom paths, set `MAKEARGS`, for example `MAKEARGS="DB_INC=... DB_LIBDIR=..." bash test.sh`.
 
 ## What changed from the original
 
