@@ -8,6 +8,6 @@ jobs:
         os: [ubuntu-22.04, ubuntu-24.04, ubuntu-24.04-arm]
     runs-on: ${{ matrix.os }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
       - run: sudo apt-get update && sudo apt-get install -y g++ make pkg-config libssl-dev libdb++-dev procps
       - run: bash test.sh
