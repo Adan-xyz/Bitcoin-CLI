@@ -51,6 +51,12 @@ static void StopMiner()
     fMinerStarted = false;
 }
 
+static double ExpectedHashes(unsigned int nBits)
+{
+    double target = ldexp((double)(nBits & 0x007fffff), 8 * ((int)(nBits >> 24) - 3));
+    return target > 0 ? ldexp(1.0, 256) / target : 0;
+}
+
 static vector<string> Tokenize(const string& line)
 {
     vector<string> v;
@@ -100,6 +106,19 @@ static bool DoCommand(const vector<string>& v)
         printf_cli("connections   : %d\n", nNodes);
         printf_cli("listening on  : %s\n", addrLocalHost.ToString().c_str());
         printf_cli("generating    : %s\n", fGenerateBitcoins ? "yes" : "no");
+        {
+            static int64 nPrevHashes = 0, nPrevTime = GetTime();
+            int64 nNow = GetTime(), nHashes = nMinerHashes;
+            double dRate = nNow > nPrevTime ? (double)(nHashes - nPrevHashes) / (nNow - nPrevTime) : 0;
+            if (nNow > nPrevTime) { nPrevHashes = nHashes; nPrevTime = nNow; }
+            printf_cli("hashrate      : %.0f H/s (since last getinfo)\n", dRate);
+            if (pindexBest && dRate > 0)
+            {
+                double dEst = ExpectedHashes(pindexBest->nBits) / dRate;
+                printf_cli("est. per block: %.0f s (%.1f h)\n", dEst, dEst / 3600);
+            }
+            printf_cli("network       : %s\n", fEasy ? "easy (test)" : "main genesis");
+        }
         printf_cli("balance       : %s\n", FormatMoney(GetBalance()).c_str());
         printf_cli("keys          : %d\n", (int)mapKeys.size());
     }
@@ -219,7 +238,7 @@ int main(int argc, char* argv[])
     if (mapArgs.count("help") || mapArgs.count("h"))
     {
         puts("Usage: bitcoin [-datadir=DIR] [-gen] [-addnode=IP[:PORT]] [-port=N] [-proxy=IP:PORT]\n"
-             "               [-debug] [-printtoconsole] [-irc] [-noprompt] [-easy] [-stdin]");
+             "               [-debug] [-printtoconsole] [-irc] [-noprompt] [-easy] [-solo] [-stdin]");
         PrintHelp();
         return 0;
     }
@@ -239,6 +258,7 @@ int main(int argc, char* argv[])
     if (mapArgs.count("debug"))        fDebug = true;
     if (mapArgs.count("printtoconsole")) fPrintToConsole = true;
     if (mapArgs.count("irc"))          fUseIRC = true;
+    if (mapArgs.count("solo"))         fSolo = true;
     if (mapArgs.count("port"))         nListenPort = htons((unsigned short)atoi(mapArgs["port"].c_str()));
     if (mapArgs.count("dropmessages")) nDropMessagesTest = atoi(mapArgs["dropmessages"].c_str());
 

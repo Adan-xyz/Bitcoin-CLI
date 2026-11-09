@@ -21,6 +21,8 @@ static const int COINBASE_MATURITY = 100;
 
 extern CBigNum bnProofOfWorkLimit;
 extern bool fEasy;
+extern bool fSolo;
+extern int64 nMinerHashes;
 void SelectEasyNetwork();
 
 

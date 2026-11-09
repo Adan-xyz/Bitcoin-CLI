@@ -61,7 +61,7 @@ If BerkeleyDB or OpenSSL live in a non-standard place, override the paths:
 ./bitcoin -datadir=./data -gen
 ~~~
 
-Options: `-datadir=DIR` `-gen` `-addnode=IP[:PORT]` `-port=N` `-proxy=IP:PORT` `-easy` `-debug` `-printtoconsole` `-irc` `-noprompt` `-stdin` `-printblocktree`
+Options: `-datadir=DIR` `-gen` `-addnode=IP[:PORT]` `-port=N` `-proxy=IP:PORT` `-easy` `-solo` `-debug` `-printtoconsole` `-irc` `-noprompt` `-stdin` `-printblocktree`
 
 Prompt commands:
 

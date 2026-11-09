@@ -49,6 +49,8 @@ int nDropMessagesTest = 0;
 
 // Settings
 int fGenerateBitcoins;
+bool fSolo = false;
+int64 nMinerHashes = 0;
 int64 nTransactionFee = 0;
 CAddress addrIncoming;
 
@@ -2194,7 +2196,7 @@ bool BitcoinMiner()
     {
         Sleep(50);
         CheckForShutdown(3);
-        while (vNodes.empty() && !fEasy)
+        while (vNodes.empty() && !fEasy && !fSolo)
         {
             Sleep(1000);
             CheckForShutdown(3);
@@ -2345,6 +2347,7 @@ bool BitcoinMiner()
             // Update nTime every few seconds
             if ((++tmp.block.nNonce & 0x3ffff) == 0)
             {
+                nMinerHashes += 0x40000;
                 CheckForShutdown(3);
                 if (tmp.block.nNonce == 0)
                     break;
