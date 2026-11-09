@@ -116,3 +116,5 @@ Builds from scratch, mines, syncs two nodes, sends coins, restarts both and chec
 - External-IP lookup and IRC seeding are off by default (their services are gone); `-irc` re-enables them.
 - Miner runs without peers in `-easy` mode.
 - Portable byte-swap and `-fsigned-char`, so it also builds on ARM; small fixes for clang/libc++.
+
+See [DEVIATIONS.md](DEVIATIONS.md) for every difference from the original 0.1.0 source.
