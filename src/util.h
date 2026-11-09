@@ -243,9 +243,8 @@ int OutputDebugStringF(const char* pszFormat, ...);
     }
 
 #define CATCH_PRINT_EXCEPTION(pszFn)     \
-    catch (abi::__forced_unwind&) {      \
-        throw;                           \
-    } catch (std::exception& e) {        \
+    CATCH_FORCED_UNWIND                  \
+    catch (std::exception& e) {          \
         PrintException(&e, (pszFn));     \
     } catch (...) {                      \
         PrintException(NULL, (pszFn));   \

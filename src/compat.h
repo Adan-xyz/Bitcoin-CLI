@@ -24,7 +24,12 @@
 #include <string.h>
 #include <ctype.h>
 #include <limits.h>
+#ifdef __GLIBC__
 #include <cxxabi.h>
+#define CATCH_FORCED_UNWIND catch (abi::__forced_unwind&) { throw; }
+#else
+#define CATCH_FORCED_UNWIND
+#endif
 
 // ---- types
 typedef int SOCKET;
