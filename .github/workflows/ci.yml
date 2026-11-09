@@ -11,3 +11,8 @@ jobs:
       - uses: actions/checkout@v5
       - run: sudo apt-get update && sudo apt-get install -y g++ make pkg-config libssl-dev libdb++-dev procps
       - run: bash test.sh
+  docker:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - run: docker build --build-arg RUN_TESTS=1 -t bitcoin-cli-test .
