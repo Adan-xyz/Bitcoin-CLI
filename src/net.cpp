@@ -931,7 +931,7 @@ bool StartNode(string& strError)
     struct sockaddr_in sockaddr = addrLocalHost.GetSockAddr();
     sockaddr.sin_addr.s_addr = INADDR_ANY;
     { int nReuse = 1; setsockopt(hListenSocket, SOL_SOCKET, SO_REUSEADDR, (char*)&nReuse, sizeof(nReuse)); }
-    if (bind(hListenSocket, (struct sockaddr*)&sockaddr, sizeof(sockaddr)) == SOCKET_ERROR)
+    if (::bind(hListenSocket, (struct sockaddr*)&sockaddr, sizeof(sockaddr)) == SOCKET_ERROR)
     {
         int nErr = WSAGetLastError();
         if (nErr == WSAEADDRINUSE)

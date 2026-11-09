@@ -15,7 +15,7 @@
 
 static CCriticalSection cs_db;
 static bool fDbEnvInit = false;
-DbEnv dbenv(0);
+DbEnv dbenv((u_int32_t)0);
 static map<string, int> mapFileUseCount;
 
 class CDBInit

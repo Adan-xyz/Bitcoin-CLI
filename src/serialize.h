@@ -806,7 +806,13 @@ public:
 #if !defined(_MSC_VER) || _MSC_VER >= 1300
     void insert(iterator it, const char* first, const char* last)
     {
-        insert(it, (const_iterator)first, (const_iterator)last);
+        if (it == vch.begin() + nReadPos && last - first <= nReadPos)
+        {
+            nReadPos -= (last - first);
+            memcpy(&vch[nReadPos], first, last - first);
+        }
+        else
+            vch.insert(it, first, last);
     }
 #endif
 
