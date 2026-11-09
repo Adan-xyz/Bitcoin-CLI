@@ -11,7 +11,7 @@ cleanup(){ exec 3>&- 4>&- 2>/dev/null; pkill -f "bitcoin -easy" 2>/dev/null; }
 trap cleanup EXIT
 
 rm -rf t1 t2 obj bitcoin
-if make -j4 >"$T/build.log" 2>&1 && [ -x ./bitcoin ]; then ok "clean build"; else bad "clean build"; tail -30 "$T/build.log"; exit 1; fi
+if make -j4 ${MAKEARGS:-} >"$T/build.log" 2>&1 && [ -x ./bitcoin ]; then ok "clean build"; else bad "clean build"; tail -30 "$T/build.log"; exit 1; fi
 
 start(){ # n fd args...
   local n=$1 fd=$2; shift 2
