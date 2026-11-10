@@ -72,7 +72,7 @@ Prompt commands:
 | `getbalance` | wallet balance |
 | `getnewaddress [label]` | new receiving address |
 | `listaddresses` | wallet addresses |
-| `send <address> <amount>` | send coins |
+| `send <address> <amount> [comment]` | send coins (the optional comment is stored with the transaction) |
 | `listtransactions [n]` | recent wallet transactions |
 | `gen [on\|off]` | start/stop mining |
 | `addnode <ip[:port]>` | connect to a peer |
@@ -85,6 +85,24 @@ Prompt commands:
 | `validateaddress <addr>` | check an address and whether it is yours |
 | `setlabel <addr> <label>` | name an address |
 | `backupwallet <path>` | copy `wallet.dat` to a file or directory |
+| `setfee [amount]` | show or set the transaction fee |
+| `listunspent` | unspent wallet outputs |
+| `getreceivedbyaddress <addr> [minconf]` | total received by an address |
+| `listreceivedbyaddress [minconf]` | totals for every wallet address |
+| `dumpprivkey <addr>` | print a wallet private key (hex DER, not WIF) |
+| `importprivkey <hex>` | import a private key (follow with `rescan`) |
+| `rescan` | rescan the chain for wallet transactions |
+| `rebroadcast` | re-send wallet transactions to peers |
+| `getbestblockhash` | hash of the best block |
+| `getchaintips` | active tip and side branches |
+| `getrawmempool` / `getmempoolinfo` | memory pool contents / size |
+| `getrawtransaction <txid>` | any transaction from the memory pool or chain |
+| `generate <n>` | mine n blocks (only with `-easy`) |
+| `getconnectioncount` | number of peers |
+| `getnetworkinfo` | network settings |
+| `listknownpeers` | addresses learned from peers |
+| `disconnectnode <ip[:port]>` | drop a peer |
+| `uptime` | time since start |
 | `stop` | shut down (also `quit`, `exit`, Ctrl-C) |
 
 Logs go to `<datadir>/debug.log` (add `-printtoconsole` to also print them).
@@ -106,7 +124,7 @@ Never mix an `-easy` data directory with a normal one; the node refuses to start
 bash test.sh
 ~~~
 
-Builds from scratch, mines, syncs two nodes, sends coins, restarts both and checks that the wallet and chain survive. It takes a few minutes and uses full CPU. Expected last line: `passed=20 failed=0`. If your libraries are in custom paths, set `MAKEARGS`, for example `MAKEARGS="DB_INC=... DB_LIBDIR=..." bash test.sh`.
+Builds from scratch, mines, syncs two nodes, sends coins, restarts both and checks that the wallet and chain survive. It takes a few minutes and uses full CPU. Expected last line: `passed=39 failed=0`. If your libraries are in custom paths, set `MAKEARGS`, for example `MAKEARGS="DB_INC=... DB_LIBDIR=..." bash test.sh`.
 
 ## What changed from the original
 

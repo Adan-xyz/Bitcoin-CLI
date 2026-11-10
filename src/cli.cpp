@@ -97,6 +97,27 @@ static CBlockIndex* FindBlockIndex(const string& str)
     return mi == mapBlockIndex.end() ? NULL : (*mi).second;
 }
 
+extern CCriticalSection cs_mapTransactions;
+extern bool AddToWalletIfMine(const CTransaction& tx, const CBlock* pblock);
+static int64 nStartTime = GetTime();
+
+static bool ParseHexString(const string& str, vector<unsigned char>& vchRet)
+{
+    vchRet.clear();
+    if (str.empty() || str.size() % 2 != 0)
+        return false;
+    for (size_t i = 0; i < str.size(); i += 2)
+    {
+        char pair[3] = { str[i], str[i + 1], 0 };
+        char* pend = NULL;
+        unsigned long n = strtoul(pair, &pend, 16);
+        if (*pend != 0)
+            return false;
+        vchRet.push_back((unsigned char)n);
+    }
+    return true;
+}
+
 static void PrintHelp()
 {
     puts(
@@ -106,12 +127,31 @@ static void PrintHelp()
         "  getbalance                wallet balance\n"
         "  getnewaddress [label]     create a new receiving address\n"
         "  listaddresses             list wallet addresses\n"
-        "  send <address> <amount>   send coins to a bitcoin address\n"
+        "  send <address> <amount> [comment]  send coins to a bitcoin address\n"
+        "  setfee [amount]           show or set the transaction fee\n"
+        "  listunspent               unspent wallet outputs\n"
+        "  getreceivedbyaddress <addr> [minconf]  total received by an address\n"
+        "  listreceivedbyaddress [minconf]        totals for all wallet addresses\n"
+        "  dumpprivkey <addr>        print the private key (hex) of a wallet address\n"
+        "  importprivkey <hex>       import a private key (then run rescan)\n"
+        "  rescan                    rescan the chain for wallet transactions\n"
+        "  rebroadcast               re-send wallet transactions to peers\n"
         "  listtransactions [n]      wallet transactions (default 20)\n"
         "  gen [on|off]              start/stop generating coins (mining)\n"
         "  addnode <ip[:port]>       connect to a peer\n"
         "  peers | getpeerinfo       list connected peers\n"
         "  getblockcount             height of the best chain\n"
+        "  getbestblockhash          hash of the best block\n"
+        "  getchaintips              chain tips (active and side branches)\n"
+        "  getrawmempool             transactions waiting in the memory pool\n"
+        "  getmempoolinfo            memory pool size\n"
+        "  getrawtransaction <txid>  any transaction (memory pool or chain)\n"
+        "  generate <n>              mine n blocks (-easy network only)\n"
+        "  getconnectioncount        number of peers\n"
+        "  getnetworkinfo            network settings\n"
+        "  listknownpeers            addresses learned from peers\n"
+        "  disconnectnode <ip[:port]>  drop a peer\n"
+        "  uptime                    time since start\n"
         "  getblockhash <height>     hash of the block at a height\n"
         "  getblock <height|hash>    block details and transactions\n"
         "  gettransaction <txid>     wallet transaction details\n"
@@ -187,7 +227,7 @@ static bool DoCommand(const vector<string>& v)
     }
     else if (cmd == "send")
     {
-        if (v.size() != 3) { puts("usage: send <address> <amount>"); return true; }
+        if (v.size() < 3) { puts("usage: send <address> <amount> [comment]"); return true; }
         uint160 hash160;
         if (!AddressToHash160(v[1], hash160)) { puts("error: invalid address"); return true; }
         int64 nValue;
@@ -195,6 +235,13 @@ static bool DoCommand(const vector<string>& v)
         if (nValue > GetBalance()) { puts("error: insufficient funds"); return true; }
         CWalletTx wtx;
         wtx.mapValue["to"] = v[1];
+        if (v.size() > 3)
+        {
+            string strComment;
+            for (size_t i = 3; i < v.size(); i++)
+                strComment += (i > 3 ? " " : "") + v[i];
+            wtx.mapValue["message"] = strComment;
+        }
         CScript scriptPubKey;
         scriptPubKey << OP_DUP << OP_HASH160 << hash160 << OP_EQUALVERIFY << OP_CHECKSIG;
         try
@@ -327,6 +374,9 @@ static bool DoCommand(const vector<string>& v)
             map<string, string>::const_iterator mt = wtx.mapValue.find("to");
             if (mt != wtx.mapValue.end())
                 printf_cli("to            : %s\n", (*mt).second.c_str());
+            map<string, string>::const_iterator mm = wtx.mapValue.find("message");
+            if (mm != wtx.mapValue.end())
+                printf_cli("message       : %s\n", (*mm).second.c_str());
             if (wtx.IsCoinBase())
                 printf_cli("input         : coinbase\n");
             else
@@ -395,6 +445,303 @@ static bool DoCommand(const vector<string>& v)
             printf_cli("wallet backed up to %s (%d bytes)\n", strDest.c_str(), (int)nTotal);
         else
             puts("error: write failed");
+    }
+    else if (cmd == "getbestblockhash")
+        printf_cli("%s\n", hashBestChain.ToString().c_str());
+    else if (cmd == "getconnectioncount")
+    {
+        int nNodes = 0;
+        CRITICAL_BLOCK(cs_vNodes)
+            nNodes = vNodes.size();
+        printf_cli("%d\n", nNodes);
+    }
+    else if (cmd == "getnetworkinfo")
+    {
+        int nNodes = 0;
+        CRITICAL_BLOCK(cs_vNodes)
+            nNodes = vNodes.size();
+        int nKnown = 0;
+        CRITICAL_BLOCK(cs_mapAddresses)
+            nKnown = mapAddresses.size();
+        printf_cli("version       : 0.1.0 (cli)\n");
+        printf_cli("protocol      : %d\n", VERSION);
+        printf_cli("network       : %s\n", fEasy ? "easy (test)" : "main genesis");
+        printf_cli("listening on  : %s\n", addrLocalHost.ToString().c_str());
+        printf_cli("services      : %llx\n", (unsigned long long)nLocalServices);
+        printf_cli("proxy         : %s\n", addrProxy.ip ? addrProxy.ToString().c_str() : "none");
+        printf_cli("connections   : %d\n", nNodes);
+        printf_cli("known peers   : %d\n", nKnown);
+        printf_cli("irc seeding   : %s\n", fUseIRC ? "on" : "off");
+    }
+    else if (cmd == "uptime")
+    {
+        int64 n = GetTime() - nStartTime;
+        printf_cli("%lldd %lldh %lldm %llds\n", n / 86400, (n / 3600) % 24, (n / 60) % 60, n % 60);
+    }
+    else if (cmd == "listknownpeers")
+    {
+        int nShown = 0;
+        CRITICAL_BLOCK(cs_mapAddresses)
+        {
+            foreach(const PAIRTYPE(const vector<unsigned char>, CAddress)& item, mapAddresses)
+            {
+                if (nShown++ >= 100) break;
+                printf_cli("%s  last seen %s  services=%llx\n", item.second.ToString().c_str(),
+                           DateTimeStr(item.second.nTime).c_str(), (unsigned long long)item.second.nServices);
+            }
+        }
+        if (nShown == 0) puts("no known peers");
+    }
+    else if (cmd == "disconnectnode")
+    {
+        if (v.size() != 2) { puts("usage: disconnectnode <ip[:port]>"); return true; }
+        CAddress addr(v[1].c_str());
+        bool fPort = v[1].find(':') != string::npos;
+        int nDropped = 0;
+        CRITICAL_BLOCK(cs_vNodes)
+        {
+            foreach(CNode* pnode, vNodes)
+                if (pnode->addr.ip == addr.ip && (!fPort || pnode->addr.port == addr.port))
+                {
+                    pnode->fDisconnect = true;
+                    nDropped++;
+                }
+        }
+        if (nDropped) printf_cli("disconnected %d node(s)\n", nDropped);
+        else puts("error: no such peer");
+    }
+    else if (cmd == "getmempoolinfo")
+    {
+        int nTx = 0;
+        CRITICAL_BLOCK(cs_mapTransactions)
+            nTx = mapTransactions.size();
+        printf_cli("size          : %d\n", nTx);
+    }
+    else if (cmd == "getrawmempool")
+    {
+        CRITICAL_BLOCK(cs_mapTransactions)
+        {
+            foreach(const PAIRTYPE(const uint256, CTransaction)& item, mapTransactions)
+                printf_cli("%s\n", item.first.ToString().c_str());
+        }
+    }
+    else if (cmd == "getrawtransaction")
+    {
+        if (v.size() != 2) { puts("usage: getrawtransaction <txid>"); return true; }
+        uint256 hash;
+        hash.SetHex(v[1]);
+        CTransaction tx;
+        const char* pszWhere = NULL;
+        CRITICAL_BLOCK(cs_mapTransactions)
+        {
+            map<uint256, CTransaction>::iterator mi = mapTransactions.find(hash);
+            if (mi != mapTransactions.end())
+            {
+                tx = (*mi).second;
+                pszWhere = "memory pool";
+            }
+        }
+        if (!pszWhere)
+        {
+            CTxDB txdb("r");
+            if (txdb.ReadDiskTx(hash, tx))
+                pszWhere = "chain";
+        }
+        if (!pszWhere) { puts("error: transaction not found"); return true; }
+        printf_cli("txid          : %s\n", tx.GetHash().ToString().c_str());
+        printf_cli("where         : %s\n", pszWhere);
+        printf_cli("version       : %d\n", tx.nVersion);
+        printf_cli("locktime      : %u\n", tx.nLockTime);
+        if (tx.IsCoinBase())
+            printf_cli("input         : coinbase\n");
+        else
+            for (int i = 0; i < (int)tx.vin.size(); i++)
+                printf_cli("input %d: %s:%u\n", i, tx.vin[i].prevout.hash.ToString().c_str(), tx.vin[i].prevout.n);
+        for (int i = 0; i < (int)tx.vout.size(); i++)
+            printf_cli("output %d: %s -> %s\n", i, FormatMoney(tx.vout[i].nValue).c_str(),
+                       ScriptAddress(tx.vout[i].scriptPubKey).c_str());
+    }
+    else if (cmd == "getchaintips")
+    {
+        CRITICAL_BLOCK(cs_main)
+        {
+            set<CBlockIndex*> setParents;
+            for (map<uint256, CBlockIndex*>::iterator mi = mapBlockIndex.begin(); mi != mapBlockIndex.end(); ++mi)
+                if ((*mi).second->pprev)
+                    setParents.insert((*mi).second->pprev);
+            for (map<uint256, CBlockIndex*>::iterator mi = mapBlockIndex.begin(); mi != mapBlockIndex.end(); ++mi)
+            {
+                CBlockIndex* pindex = (*mi).second;
+                if (setParents.count(pindex))
+                    continue;
+                int nBranchLen = 0;
+                CBlockIndex* p = pindex;
+                while (p && !(p->pnext || p == pindexBest))
+                {
+                    nBranchLen++;
+                    p = p->pprev;
+                }
+                printf_cli("height=%d  hash=%s  branchlen=%d  %s\n", pindex->nHeight,
+                           pindex->GetBlockHash().ToString().c_str(), nBranchLen,
+                           pindex == pindexBest ? "active" : "fork");
+            }
+        }
+    }
+    else if (cmd == "generate")
+    {
+        if (!fEasy) { puts("error: generate only works with -easy"); return true; }
+        int nBlocks = v.size() > 1 ? atoi(v[1].c_str()) : 1;
+        if (nBlocks < 1 || nBlocks > 1000) { puts("usage: generate <1-1000>"); return true; }
+        int nTarget = nBestHeight + nBlocks;
+        bool fWasOn = fGenerateBitcoins;
+        StartMiner();
+        for (int i = 0; i < 1200 && nBestHeight < nTarget && !fQuitSignal; i++)
+            Sleep(100);
+        if (!fWasOn)
+            StopMiner();
+        printf_cli("mined to height %d\n", nBestHeight);
+    }
+    else if (cmd == "rebroadcast")
+    {
+        RelayWalletTransactions();
+        puts("ok");
+    }
+    else if (cmd == "setfee")
+    {
+        if (v.size() > 2) { puts("usage: setfee [amount]"); return true; }
+        if (v.size() == 2)
+        {
+            int64 nFee;
+            if (!ParseMoney(v[1].c_str(), nFee) && v[1] != "0") { puts("error: invalid amount"); return true; }
+            if (v[1] == "0") nFee = 0;
+            if (nFee < 0 || nFee > COIN) { puts("error: fee must be between 0 and 1"); return true; }
+            nTransactionFee = nFee;
+            CWalletDB().WriteSetting("nTransactionFee", nTransactionFee);
+        }
+        printf_cli("transaction fee: %s\n", FormatMoney(nTransactionFee).c_str());
+    }
+    else if (cmd == "listunspent")
+    {
+        int nShown = 0;
+        CRITICAL_BLOCK(cs_mapWallet)
+        {
+            foreach(const PAIRTYPE(const uint256, CWalletTx)& item, mapWallet)
+            {
+                const CWalletTx& wtx = item.second;
+                if (!wtx.IsFinal() || wtx.fSpent || wtx.GetCredit() == 0)
+                    continue;
+                for (int i = 0; i < (int)wtx.vout.size(); i++)
+                {
+                    if (!wtx.vout[i].IsMine())
+                        continue;
+                    printf_cli("%s:%d  %s  %s  %d confirmations\n", item.first.ToString().c_str(), i,
+                               FormatMoney(wtx.vout[i].nValue).c_str(),
+                               ScriptAddress(wtx.vout[i].scriptPubKey).c_str(), wtx.GetDepthInMainChain());
+                    nShown++;
+                }
+            }
+        }
+        if (nShown == 0) puts("no unspent outputs");
+    }
+    else if (cmd == "getreceivedbyaddress" || cmd == "listreceivedbyaddress")
+    {
+        bool fList = (cmd == "listreceivedbyaddress");
+        if (!fList && (v.size() < 2 || v.size() > 3)) { puts("usage: getreceivedbyaddress <address> [minconf]"); return true; }
+        int nMinConf = fList ? (v.size() > 1 ? atoi(v[1].c_str()) : 1) : (v.size() > 2 ? atoi(v[2].c_str()) : 1);
+        string strWanted = fList ? "" : v[1];
+        map<string, int64> mapTotals;
+        CRITICAL_BLOCK(cs_mapWallet)
+        {
+            foreach(const PAIRTYPE(const uint256, CWalletTx)& item, mapWallet)
+            {
+                const CWalletTx& wtx = item.second;
+                if (!wtx.IsFinal() || wtx.GetDepthInMainChain() < nMinConf)
+                    continue;
+                if (wtx.IsCoinBase() && wtx.GetBlocksToMaturity() > 0)
+                    continue;
+                foreach(const CTxOut& txout, wtx.vout)
+                {
+                    if (!txout.IsMine())
+                        continue;
+                    string strAddr = ScriptAddress(txout.scriptPubKey);
+                    if (!fList && strAddr != strWanted)
+                        continue;
+                    mapTotals[strAddr] += txout.nValue;
+                }
+            }
+        }
+        if (!fList)
+            printf_cli("%s\n", FormatMoney(mapTotals[strWanted]).c_str());
+        else
+            foreach(const PAIRTYPE(const string, int64)& item, mapTotals)
+            {
+                map<string, string>::iterator mi = mapAddressBook.find(item.first);
+                printf_cli("%s  %s  %s\n", item.first.c_str(), FormatMoney(item.second).c_str(),
+                           mi != mapAddressBook.end() ? (*mi).second.c_str() : "");
+            }
+    }
+    else if (cmd == "dumpprivkey")
+    {
+        if (v.size() != 2) { puts("usage: dumpprivkey <address>"); return true; }
+        uint160 hash160;
+        if (!AddressToHash160(v[1], hash160)) { puts("error: invalid address"); return true; }
+        CRITICAL_BLOCK(cs_mapKeys)
+        {
+            map<uint160, vector<unsigned char> >::iterator mp = mapPubKeys.find(hash160);
+            if (mp == mapPubKeys.end()) { puts("error: address is not in this wallet"); return true; }
+            map<vector<unsigned char>, CPrivKey>::iterator mk = mapKeys.find((*mp).second);
+            if (mk == mapKeys.end()) { puts("error: private key not found"); return true; }
+            printf_cli("%s\n", HexStr((*mk).second.begin(), (*mk).second.end(), false).c_str());
+        }
+    }
+    else if (cmd == "importprivkey")
+    {
+        if (v.size() != 2) { puts("usage: importprivkey <hex>  (as printed by dumpprivkey)"); return true; }
+        vector<unsigned char> vch;
+        if (!ParseHexString(v[1], vch)) { puts("error: not a hex string"); return true; }
+        CKey key;
+        if (!key.SetPrivKey(CPrivKey(vch.begin(), vch.end()))) { puts("error: invalid private key"); return true; }
+        if (!AddKey(key)) { puts("error: could not store key"); return true; }
+        printf_cli("imported %s (run rescan to find its past transactions)\n", PubKeyToAddress(key.GetPubKey()).c_str());
+    }
+    else if (cmd == "rescan")
+    {
+        int nBefore = 0, nAfter = 0, nBlocks = 0;
+        CRITICAL_BLOCK(cs_main)
+        CRITICAL_BLOCK(cs_mapWallet)
+        {
+            nBefore = mapWallet.size();
+            vector<CBlockIndex*> vChain;
+            for (CBlockIndex* p = pindexBest; p; p = p->pprev)
+                vChain.push_back(p);
+            for (int i = (int)vChain.size() - 1; i >= 0; i--)
+            {
+                CBlock block;
+                if (!block.ReadFromDisk(vChain[i], true))
+                    continue;
+                nBlocks++;
+                foreach(const CTransaction& tx, block.vtx)
+                    AddToWalletIfMine(tx, &block);
+            }
+            // refresh the spent flag from the transaction index
+            CTxDB txdb("r");
+            foreach(PAIRTYPE(const uint256, CWalletTx)& item, mapWallet)
+            {
+                CWalletTx& wtx = item.second;
+                CTxIndex txindex;
+                if (wtx.fSpent || !txdb.ReadTxIndex(wtx.GetHash(), txindex))
+                    continue;
+                for (int i = 0; i < (int)wtx.vout.size() && i < (int)txindex.vSpent.size(); i++)
+                    if (!txindex.vSpent[i].IsNull() && wtx.vout[i].IsMine())
+                    {
+                        wtx.fSpent = true;
+                        wtx.WriteToDisk();
+                        break;
+                    }
+            }
+            nAfter = mapWallet.size();
+        }
+        printf_cli("rescan complete: %d blocks, %d new wallet transaction(s)\n", nBlocks, nAfter - nBefore);
     }
     else
         printf_cli("unknown command '%s' (try: help)\n", cmd.c_str());

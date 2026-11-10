@@ -60,6 +60,12 @@ b1=$(cmd n1 getinfo | awk '/^bestblock/{print $3}'); b2=$(cmd n2 getinfo | awk '
 bh0=$(cmd n1 getblockhash 0 | tail -1)
 cmd n1 getblock "$bh0" | grep -q "^height *: 0" && ok "getblockhash/getblock genesis" || bad "getblock genesis ($bh0)"
 cmd n2 getpeerinfo | grep -q "version=" && ok "getpeerinfo" || bad "getpeerinfo"
+[ "$(cmd n1 getbestblockhash | tail -1)" = "$b1" ] && ok "getbestblockhash" || bad "getbestblockhash"
+[ "$(cmd n1 getconnectioncount | tail -1)" -ge 1 ] 2>/dev/null && ok "getconnectioncount" || bad "getconnectioncount"
+cmd n1 getnetworkinfo | grep -q "^network *: easy" && ok "getnetworkinfo" || bad "getnetworkinfo"
+cmd n1 uptime | grep -Eq '^[0-9]+d [0-9]+h [0-9]+m [0-9]+s$' && ok "uptime" || bad "uptime"
+cmd n1 getchaintips | grep -q "active" && ok "getchaintips" || bad "getchaintips"
+cmd n1 getmempoolinfo | grep -q "^size" && ok "getmempoolinfo" || bad "getmempoolinfo"
 
 addr=$(cmd n2 getnewaddress | tail -1)
 echo "$addr" | grep -Eq '^1[1-9A-HJ-NP-Za-km-z]{25,34}$' && ok "address $addr" || bad "address format: $addr"
@@ -73,8 +79,33 @@ waitfor 40 n2 5.00 && ok "n2 received 5.00" || bad "n2 balance $(bal n2) (expect
 txid=$(echo "$sendout" | awk '/^txid/{print $2}')
 cmd n2 gettransaction "$txid" | grep -q "^net *: +5.00" && ok "gettransaction" || bad "gettransaction ($txid)"
 cmd n1 backupwallet "$T/wallet.bak" | grep -q "backed up" && [ -s "$T/wallet.bak" ] && ok "backupwallet" || bad "backupwallet"
+cmd n1 getrawtransaction "$txid" | grep -Eq "^where *: (chain|memory pool)" && ok "getrawtransaction" || bad "getrawtransaction"
+cmd n1 listunspent | grep -q ":[0-9]" && ok "listunspent" || bad "listunspent"
+rcv=$(cmd n2 getreceivedbyaddress "$addr" 0 | tail -1)
+[ "$rcv" = "5.00" ] && ok "getreceivedbyaddress" || bad "getreceivedbyaddress ($rcv)"
+cmd n2 listreceivedbyaddress 0 | grep -q "$addr" && ok "listreceivedbyaddress" || bad "listreceivedbyaddress"
+cmd n1 rebroadcast | grep -q "^ok" && ok "rebroadcast" || bad "rebroadcast"
+cmd n1 setfee 0.01 >/dev/null
+cmd n1 setfee | grep -q "0.01" && ok "setfee" || bad "setfee"
+cmd n1 setfee 0 >/dev/null
+a1=$(cmd n1 getnewaddress | tail -1)
+tx2=$(cmd n1 send "$a1" 1 hello world | awk '/^txid/{print $2}')
+cmd n1 gettransaction "$tx2" | grep -q "^message *: hello world" && ok "send comment" || bad "send comment ($tx2)"
+pk=$(cmd n2 dumpprivkey "$addr" | tail -1)
+[ ${#pk} -gt 100 ] && ok "dumpprivkey" || bad "dumpprivkey"
+cmd n1 importprivkey "$pk" | grep -q "imported $addr" && ok "importprivkey" || bad "importprivkey"
+cmd n1 validateaddress "$addr" | grep -q "^ismine *: yes" && ok "imported key is mine" || bad "imported key not mine"
+cmd n1 rescan | grep -q "rescan complete" && ok "rescan" || bad "rescan"
 cmd n1 gen off >/dev/null; sleep 3
+g0=$(blocks n1)
+cmd n1 generate 3 >/dev/null; sleep 3
+g1=$(blocks n1)
+[ "${g1:-0}" -ge $((g0+3)) ] 2>/dev/null && ok "generate 3 ($g0 -> $g1)" || bad "generate ($g0 -> $g1)"
+sleep 2
 h1=$(blocks n1); hb=$(blocks n2)
+cmd n2 disconnectnode 127.0.0.1:18333 | grep -q "disconnected" || echo "disconnect command failed"
+dc=1; for i in 1 2 3 4 5; do sleep 1; dc=$(cmd n2 getconnectioncount | tail -1); [ "$dc" = "0" ] && break; done
+[ "$dc" = "0" ] && ok "disconnectnode" || bad "disconnectnode (connections=$dc)"
 
 # persistence / restart
 cmd n2 stop >/dev/null; wait $P_n2 2>/dev/null && ok "n2 clean exit" || ok "n2 exited"

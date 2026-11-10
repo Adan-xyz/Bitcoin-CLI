@@ -29,13 +29,15 @@ Validation in `main.cpp` (`CheckBlock`, `ConnectInputs`, ...) and script evaluat
 - Single-instance protection uses a `flock` on `<datadir>/.lock`.
 
 ## 3. Removed GUI features
-Direct IP-to-IP payment dialog, Options dialog (fee, proxy, start-up settings), product/market UI (market code still compiles but is unreachable), visual address book and wxWidgets message boxes. The `nTransactionFee` setting is still read from the wallet but has no way to be changed.
+Direct IP-to-IP payment dialog, Options dialog (fee, proxy, start-up settings), product/market UI (market code still compiles but is unreachable), visual address book and wxWidgets message boxes. The transaction fee setting (`nTransactionFee`) is restored as the `setfee` command; the GUI "message" field is restored as the optional comment of `send`.
 
 ## 4. Additions (opt-in)
 - `-easy`: separate test network (own genesis, fixed low difficulty). The mainline genesis hash is unchanged (`000000000019d6689c08...ce26f`). A data directory refuses to load under the other mode.
 - `-solo`: lets the miner run without peers (the original miner waits for at least one peer). In `-easy` mode this is implied.
 - `-stdin`, hashrate and estimated block time in `getinfo`.
-- CLI commands: `getinfo`, `getbalance`, `getnewaddress`, `listaddresses`, `send`, `listtransactions`, `gen`, `addnode`, `peers`/`getpeerinfo`, `getblockcount`, `getblockhash`, `getblock`, `gettransaction`, `getdifficulty`, `validateaddress`, `setlabel`, `backupwallet`.
+- CLI commands: `getinfo`, `getbalance`, `getnewaddress`, `listaddresses`, `send`, `listtransactions`, `gen`, `addnode`, `peers`/`getpeerinfo`, `getblockcount`, `getblockhash`, `getblock`, `gettransaction`, `getdifficulty`, `validateaddress`, `setlabel`, `backupwallet`, `setfee`, `listunspent`, `getreceivedbyaddress`, `listreceivedbyaddress`, `dumpprivkey`, `importprivkey`, `rescan`, `rebroadcast`, `getbestblockhash`, `getchaintips`, `getrawmempool`, `getmempoolinfo`, `getrawtransaction`, `generate`, `getconnectioncount`, `getnetworkinfo`, `listknownpeers`, `disconnectnode`, `uptime`.
+- `dumpprivkey` prints the raw DER private key as hex (0.1 has no WIF format). Private keys are stored unencrypted in `wallet.dat`, as in the original.
+- `rescan` re-adds wallet transactions found in the chain and refreshes the wallet's per-transaction spent flag; rescanned transactions get the rescan time as their received time.
 
 ## 5. Not verified to match the original
 1. **Signature verification:** OpenSSL 1.1+ rejects non-canonical DER signatures that OpenSSL 0.9.8 accepted. Old blocks with such signatures could validate differently. Tests only use signatures created by this code.
