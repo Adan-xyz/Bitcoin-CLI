@@ -25,3 +25,22 @@ jobs:
           export PKG_CONFIG_PATH="$(brew --prefix openssl@3)/lib/pkgconfig"
           export MAKEARGS="DB_INC=$(brew --prefix berkeley-db@5)/include DB_LIBDIR=$(brew --prefix berkeley-db@5)/lib"
           bash test.sh
+  sanitize:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v5
+      - run: sudo apt-get update && sudo apt-get install -y g++ make pkg-config libssl-dev libdb++-dev procps
+      - run: |
+          export CXXFLAGS="-O1 -g -fsanitize=address,undefined -fno-omit-frame-pointer"
+          export ASAN_OPTIONS=detect_leaks=0
+          bash test.sh
+  warnings:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v5
+      - run: sudo apt-get update && sudo apt-get install -y g++ make pkg-config libssl-dev libdb++-dev
+      - run: |
+          make -j4 WARN="-Wall -Wextra -Wno-unused-parameter" 2>&1 | tee warnings.log
+          test -x bitcoin
+          echo "total warnings: $(grep -c 'warning:' warnings.log)"
+          grep -o '\[-W[a-z0-9+=-]*\]' warnings.log | sort | uniq -c | sort -rn | head -30

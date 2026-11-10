@@ -16,7 +16,7 @@ if make -j4 ${MAKEARGS:-} >"$T/build.log" 2>&1 && [ -x ./bitcoin ]; then ok "cle
 start(){ # n fd args...
   local n=$1 fd=$2; shift 2
   [ -p "$T/$n.in" ] || mkfifo "$T/$n.in"
-  : > "$T/$n.out"
+  : >> "$T/$n.out"
   ./bitcoin -easy -stdin "$@" < "$T/$n.in" > "$T/$n.out" 2>&1 &
   eval "P_$n=$!"
   eval "exec $fd>\"$T/$n.in\""
@@ -94,5 +94,9 @@ sleep 3
 if pgrep -f "bitcoin -easy" >/dev/null; then bad "processes still running"; else ok "clean shutdown"; fi
 if grep -qiE "exception|assert|segmentation|terminate" t1/debug.log t2/debug.log "$T"/n1.out "$T"/n2.out 2>/dev/null; then bad "errors in logs"; grep -iE "exception|assert|segmentation|terminate" t1/debug.log t2/debug.log | head -5; else ok "no exceptions in logs"; fi
 
+if grep -qE "runtime error|AddressSanitizer" "$T"/n1.out "$T"/n2.out 2>/dev/null; then
+  echo "---- sanitizer findings (unique, with counts) ----"
+  grep -hE "runtime error|AddressSanitizer" "$T"/n1.out "$T"/n2.out | sort | uniq -c | sort -rn | head -40
+fi
 echo "----"; echo "passed=$PASS failed=$FAIL"
 [ $FAIL -eq 0 ]

@@ -1,7 +1,8 @@
+WARN ?= -w
 comma := ,
 CXX      ?= g++
 CXXFLAGS ?= -O2
-CXXFLAGS += -std=gnu++11 -fpermissive -w -pthread -fsigned-char
+CXXFLAGS += -std=gnu++11 -fpermissive $(WARN) -pthread -fsigned-char
 
 # OpenSSL (1.1 / 3.x)
 SSL_CFLAGS := $(shell pkg-config --cflags openssl 2>/dev/null)
