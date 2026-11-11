@@ -73,7 +73,7 @@ If BerkeleyDB or OpenSSL live in a non-standard place, override the paths:
 ./bitcoin -datadir=./data -gen
 ~~~
 
-Options: `-datadir=DIR` `-gen` `-addnode=IP[:PORT]` `-port=N` `-proxy=IP:PORT` `-easy` `-solo` `-debug` `-printtoconsole` `-irc` `-noprompt` `-stdin` `-printblocktree`
+Options: `-datadir=DIR` `-gen` `-addnode=IP[:PORT]` `-port=N` `-proxy=IP:PORT` `-easy` `-solo` `-debug` `-printtoconsole` `-irc` `-noprompt` `-stdin` `-daemon` `-server` `-printblocktree`
 
 Prompt commands:
 
@@ -119,6 +119,17 @@ Prompt commands:
 
 Logs go to `<datadir>/debug.log` (add `-printtoconsole` to also print them).
 
+## Daemon mode and local client
+
+~~~sh
+./bitcoin -daemon -datadir=./data          # runs in the background (log: data/daemon.out)
+./bitcoin -datadir=./data getinfo          # any prompt command works as a client command
+./bitcoin -datadir=./data send 1ABC... 5 thanks
+./bitcoin -datadir=./data stop             # clean shutdown
+~~~
+
+The node listens on a Unix socket, `<datadir>/bitcoin.sock` (mode 0600, same user only; nothing is exposed on the network). `-server` does the same while keeping the interactive prompt in the foreground. A client command exits with status 1 when it prints an `error:` message or cannot reach the node. For `-easy` nodes started without `-datadir`, pass `-easy` to the client too, or give the same `-datadir`.
+
 ## Local test network (`-easy`)
 
 The original network no longer exists (the IRC seed and the original nodes are gone), so a normal start is a standalone node with the real genesis block. For testing, `-easy` uses its own genesis block and a fixed, very low difficulty (blocks in about a second):
@@ -136,7 +147,7 @@ Never mix an `-easy` data directory with a normal one; the node refuses to start
 bash test.sh
 ~~~
 
-Builds from scratch, mines, syncs two nodes, sends coins, restarts both and checks that the wallet and chain survive. It takes a few minutes and uses full CPU. Expected last line: `passed=39 failed=0`. If your libraries are in custom paths, set `MAKEARGS`, for example `MAKEARGS="DB_INC=... DB_LIBDIR=..." bash test.sh`.
+Builds from scratch, mines, syncs two nodes, sends coins, restarts both and checks that the wallet and chain survive. It takes a few minutes and uses full CPU. Expected last line: `passed=48 failed=0`. If your libraries are in custom paths, set `MAKEARGS`, for example `MAKEARGS="DB_INC=... DB_LIBDIR=..." bash test.sh`.
 
 ## What changed from the original
 

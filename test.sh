@@ -10,7 +10,7 @@ pkill -f "bitcoin -easy" 2>/dev/null; sleep 1
 cleanup(){ exec 3>&- 4>&- 2>/dev/null; pkill -f "bitcoin -easy" 2>/dev/null; }
 trap cleanup EXIT
 
-rm -rf t1 t2 obj bitcoin
+rm -rf t1 t2 t3 obj bitcoin
 if make -j4 ${MAKEARGS:-} >"$T/build.log" 2>&1 && [ -x ./bitcoin ]; then ok "clean build"; else bad "clean build"; tail -30 "$T/build.log"; exit 1; fi
 
 start(){ # n fd args...
@@ -125,9 +125,24 @@ sleep 3
 if pgrep -f "bitcoin -easy" >/dev/null; then bad "processes still running"; else ok "clean shutdown"; fi
 if grep -qiE "exception|assert|segmentation|terminate" t1/debug.log t2/debug.log "$T"/n1.out "$T"/n2.out 2>/dev/null; then bad "errors in logs"; grep -iE "exception|assert|segmentation|terminate" t1/debug.log t2/debug.log | head -5; else ok "no exceptions in logs"; fi
 
-if grep -qE "runtime error|AddressSanitizer" "$T"/n1.out "$T"/n2.out 2>/dev/null; then
+# daemon mode and the local client
+dd="$PWD/t3"
+./bitcoin -easy -daemon -datadir="$dd" -port=18335 >"$T/d.out" 2>&1 && ok "daemon starts" || { bad "daemon starts"; cat "$T/d.out"; }
+client(){ ./bitcoin -datadir="$dd" "$@" 2>&1; }
+client getinfo | grep -q "^network *: easy" && ok "client getinfo" || bad "client getinfo"
+daddr=$(client getnewaddress | tail -1)
+echo "$daddr" | grep -Eq '^1[1-9A-HJ-NP-Za-km-z]{25,34}$' && ok "client getnewaddress" || bad "client getnewaddress ($daddr)"
+client generate 2 | grep -q "mined to height" && ok "client generate" || bad "client generate"
+[ "$(client getblockcount | tail -1)" -ge 2 ] 2>/dev/null && ok "client getblockcount" || bad "client getblockcount"
+client stop | grep -q "stopping" && ok "client stop" || bad "client stop"
+for i in $(seq 1 20); do pgrep -f "datadir=$dd" >/dev/null || break; sleep 1; done
+if pgrep -f "datadir=$dd" >/dev/null; then bad "daemon exited"; else ok "daemon exited"; fi
+[ ! -S "$dd/bitcoin.sock" ] && ok "socket removed" || bad "socket still present"
+client getinfo | grep -q "cannot connect" && ok "client reports a stopped node" || bad "client without node"
+
+if grep -qE "runtime error|AddressSanitizer" "$T"/n1.out "$T"/n2.out t3/daemon.out 2>/dev/null; then
   echo "---- sanitizer findings (unique, with counts) ----"
-  grep -hE "runtime error|AddressSanitizer" "$T"/n1.out "$T"/n2.out | sort | uniq -c | sort -rn | head -40
+  grep -hE "runtime error|AddressSanitizer" "$T"/n1.out "$T"/n2.out t3/daemon.out 2>/dev/null | sort | uniq -c | sort -rn | head -40
 fi
 echo "----"; echo "passed=$PASS failed=$FAIL"
 [ $FAIL -eq 0 ]

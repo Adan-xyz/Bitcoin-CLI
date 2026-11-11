@@ -1,8 +1,13 @@
 // Console (CLI) front-end replacing the wxWidgets GUI of Bitcoin 0.1.0
 #include "headers.h"
 #include <sys/file.h>
+#include <sys/un.h>
+#include <sys/wait.h>
 #undef printf
-#define printf_cli(...) fprintf(stdout, __VA_ARGS__)
+// all command output goes through g_out so that a command run for a socket client can be captured
+static FILE* g_out = stdout;
+#define printf_cli(...) fprintf(g_out, __VA_ARGS__)
+#define puts(s) (fputs((s), g_out), fputc('\n', g_out))
 #define printf(...) OutputDebugStringF(__VA_ARGS__)
 
 map<string, string> mapAddressBook;
@@ -748,12 +753,282 @@ static bool DoCommand(const vector<string>& v)
     return true;
 }
 
+// ---------------------------------------------------------------------------
+// Daemon mode and local command socket (Unix domain socket in the data directory,
+// mode 0600, so only the same user can connect)
+// ---------------------------------------------------------------------------
+static pthread_mutex_t g_cmdMutex = PTHREAD_MUTEX_INITIALIZER;
+static string g_strSockPath;
+static volatile bool g_fRpcStop = false;
+static volatile bool g_fRpcRunning = false;
+static int g_hRpcListen = -1;
+
+static bool FillSockAddr(const string& strPath, struct sockaddr_un& sa)
+{
+    memset(&sa, 0, sizeof(sa));
+    sa.sun_family = AF_UNIX;
+    if (strPath.size() >= sizeof(sa.sun_path))
+        return false;
+    memcpy(sa.sun_path, strPath.c_str(), strPath.size() + 1);
+    return true;
+}
+
+static void RpcHandleClient(int hClient)
+{
+    struct timeval tv;
+    tv.tv_sec = 10;
+    tv.tv_usec = 0;
+    setsockopt(hClient, SOL_SOCKET, SO_RCVTIMEO, (char*)&tv, sizeof(tv));
+    string strLine;
+    char ch;
+    while (strLine.size() < 65536 && recv(hClient, &ch, 1, 0) == 1 && ch != '\n')
+        strLine += ch;
+
+    string strOut;
+    bool fContinue = true;
+    vector<string> v = Tokenize(strLine);
+    if (v.empty())
+        strOut = "error: empty command\n";
+    else
+    {
+        char* pbuf = NULL;
+        size_t nlen = 0;
+        FILE* mem = open_memstream(&pbuf, &nlen);
+        if (!mem)
+            strOut = "error: out of memory\n";
+        else
+        {
+            pthread_mutex_lock(&g_cmdMutex);
+            g_out = mem;
+            try { fContinue = DoCommand(v); }
+            catch (std::exception& e) { fprintf(g_out, "error: %s\n", e.what()); }
+            g_out = stdout;
+            pthread_mutex_unlock(&g_cmdMutex);
+            fclose(mem);
+            if (pbuf)
+            {
+                strOut.assign(pbuf, nlen);
+                free(pbuf);
+            }
+            if (!fContinue)
+                strOut += "stopping\n";
+        }
+    }
+    size_t nSent = 0;
+    while (nSent < strOut.size())
+    {
+        ssize_t n = send(hClient, strOut.data() + nSent, strOut.size() - nSent, 0);
+        if (n <= 0)
+            break;
+        nSent += n;
+    }
+    if (!fContinue)
+        fQuitSignal = 1;
+}
+
+static void ThreadRpcServer(void* parg)
+{
+    try
+    {
+        while (!g_fRpcStop && !fQuitSignal)
+        {
+            fd_set fds;
+            FD_ZERO(&fds);
+            FD_SET(g_hRpcListen, &fds);
+            struct timeval tv;
+            tv.tv_sec = 0;
+            tv.tv_usec = 300000;
+            if (select(g_hRpcListen + 1, &fds, NULL, NULL, &tv) <= 0)
+                continue;
+            int hClient = accept(g_hRpcListen, NULL, NULL);
+            if (hClient < 0)
+                continue;
+            RpcHandleClient(hClient);
+            close(hClient);
+        }
+    }
+    catch (...) { }
+    g_fRpcRunning = false;
+}
+
+static bool StartRpcServer(const string& strDir)
+{
+    g_strSockPath = strDir + "/bitcoin.sock";
+    struct sockaddr_un sa;
+    if (!FillSockAddr(g_strSockPath, sa))
+    {
+        fprintf(stderr, "Error: socket path too long: %s\n", g_strSockPath.c_str());
+        return false;
+    }
+    unlink(g_strSockPath.c_str());   // stale socket of a crashed run (we hold the data directory lock)
+    g_hRpcListen = socket(AF_UNIX, SOCK_STREAM, 0);
+    if (g_hRpcListen < 0)
+        return false;
+    mode_t nOldMask = umask(077);
+    int nRet = ::bind(g_hRpcListen, (struct sockaddr*)&sa, sizeof(sa));
+    umask(nOldMask);
+    if (nRet != 0 || listen(g_hRpcListen, 8) != 0)
+    {
+        fprintf(stderr, "Error: cannot listen on %s\n", g_strSockPath.c_str());
+        close(g_hRpcListen);
+        g_hRpcListen = -1;
+        return false;
+    }
+    chmod(g_strSockPath.c_str(), 0600);
+    FILE* f = fopen((strDir + "/bitcoin.pid").c_str(), "w");
+    if (f) { fprintf(f, "%d\n", (int)getpid()); fclose(f); }
+    g_fRpcStop = false;
+    g_fRpcRunning = true;
+    if (_beginthread(ThreadRpcServer, 0, NULL) == -1)
+    {
+        g_fRpcRunning = false;
+        fprintf(stderr, "Error: cannot start the command socket thread\n");
+        return false;
+    }
+    return true;
+}
+
+static void StopRpcServer(const string& strDir)
+{
+    g_fRpcStop = true;
+    for (int i = 0; i < 50 && g_fRpcRunning; i++)
+        Sleep(100);
+    if (g_hRpcListen >= 0)
+    {
+        close(g_hRpcListen);
+        g_hRpcListen = -1;
+        unlink(g_strSockPath.c_str());
+        unlink((strDir + "/bitcoin.pid").c_str());
+    }
+}
+
+// Fork into the background. The parent waits until the child accepts connections
+// (or dies) and then exits; only the child returns.
+static void Daemonize(const string& strDir)
+{
+    fflush(stdout);
+    fflush(stderr);
+    pid_t pid = fork();
+    if (pid < 0)
+    {
+        perror("fork");
+        exit(1);
+    }
+    if (pid > 0)
+    {
+        struct sockaddr_un sa;
+        bool fPath = FillSockAddr(strDir + "/bitcoin.sock", sa);
+        for (int i = 0; i < 600; i++)
+        {
+            int nStatus;
+            if (waitpid(pid, &nStatus, WNOHANG) == pid)
+            {
+                fprintf(stderr, "Error: bitcoin failed to start, see %s/daemon.out\n", strDir.c_str());
+                _exit(1);
+            }
+            if (fPath)
+            {
+                int h = socket(AF_UNIX, SOCK_STREAM, 0);
+                if (h >= 0)
+                {
+                    int nOk = connect(h, (struct sockaddr*)&sa, sizeof(sa));
+                    close(h);
+                    if (nOk == 0)
+                    {
+                        printf_cli("Bitcoin server started (pid %d), datadir %s\n", (int)pid, strDir.c_str());
+                        fflush(stdout);
+                        _exit(0);
+                    }
+                }
+            }
+            Sleep(100);
+        }
+        printf_cli("Bitcoin server is still starting (pid %d), see %s/daemon.out\n", (int)pid, strDir.c_str());
+        fflush(stdout);
+        _exit(0);
+    }
+    setsid();
+    signal(SIGHUP, SIG_IGN);
+    int fdNull = open("/dev/null", O_RDONLY);
+    if (fdNull >= 0) dup2(fdNull, 0);
+    int fdOut = open((strDir + "/daemon.out").c_str(), O_WRONLY | O_CREAT | O_APPEND, 0600);
+    if (fdOut >= 0)
+    {
+        dup2(fdOut, 1);
+        dup2(fdOut, 2);
+    }
+}
+
+// Client mode: bitcoin [-datadir=DIR] <command> [args]
+static int ClientMain(map<string, string>& mapArgs, const vector<string>& vCmd)
+{
+    string strDir;
+    if (mapArgs.count("datadir"))
+    {
+        char rp[PATH_MAX];
+        strDir = realpath(mapArgs["datadir"].c_str(), rp) ? string(rp) : mapArgs["datadir"];
+    }
+    else if (getenv("HOME"))
+        strDir = string(getenv("HOME")) + (mapArgs.count("easy") ? "/.bitcoin-easy" : "/.bitcoin");
+    else
+    {
+        fprintf(stderr, "error: cannot determine the data directory\n");
+        return 1;
+    }
+    string strLine;
+    for (size_t i = 0; i < vCmd.size(); i++)
+    {
+        string strArg = vCmd[i];
+        if (i == 1 && vCmd[0] == "backupwallet" && !strArg.empty() && strArg[0] != '/')
+        {
+            char cwd[PATH_MAX];
+            if (getcwd(cwd, sizeof(cwd)))
+                strArg = string(cwd) + "/" + strArg;   // the node runs in another directory
+        }
+        strLine += (i ? " " : "") + strArg;
+    }
+    strLine += "\n";
+
+    string strSock = strDir + "/bitcoin.sock";
+    struct sockaddr_un sa;
+    int h = -1;
+    if (!FillSockAddr(strSock, sa) || (h = socket(AF_UNIX, SOCK_STREAM, 0)) < 0 ||
+        connect(h, (struct sockaddr*)&sa, sizeof(sa)) != 0)
+    {
+        fprintf(stderr, "error: cannot connect to %s (is the node running with -daemon or -server?)\n", strSock.c_str());
+        return 1;
+    }
+    signal(SIGPIPE, SIG_IGN);
+    size_t nSent = 0;
+    while (nSent < strLine.size())
+    {
+        ssize_t n = send(h, strLine.data() + nSent, strLine.size() - nSent, 0);
+        if (n <= 0)
+            break;
+        nSent += n;
+    }
+    string strOut;
+    char buf[4096];
+    ssize_t n;
+    while ((n = recv(h, buf, sizeof(buf), 0)) > 0)
+        strOut.append(buf, n);
+    close(h);
+    fwrite(strOut.data(), 1, strOut.size(), stdout);
+    return strOut.compare(0, 6, "error:") == 0 ? 1 : 0;
+}
+
 int main(int argc, char* argv[])
 {
     setvbuf(stdout, NULL, _IOLBF, 0);
     map<string, string> mapArgs;
+    vector<string> vClientCmd;
     for (int i = 1; i < argc; i++)
     {
+        if (argv[i][0] != '-')
+        {
+            vClientCmd.push_back(argv[i]);
+            continue;
+        }
         string s = argv[i];
         while (!s.empty() && s[0] == '-') s = s.substr(1);
         string strVal;
@@ -764,10 +1039,13 @@ int main(int argc, char* argv[])
     if (mapArgs.count("help") || mapArgs.count("h"))
     {
         puts("Usage: bitcoin [-datadir=DIR] [-gen] [-addnode=IP[:PORT]] [-port=N] [-proxy=IP:PORT]\n"
-             "               [-debug] [-printtoconsole] [-irc] [-noprompt] [-easy] [-solo] [-stdin]");
+             "               [-debug] [-printtoconsole] [-irc] [-noprompt] [-easy] [-solo] [-stdin]\n"
+             "               [-daemon] [-server]   client: bitcoin [-datadir=DIR] <command> [args]");
         PrintHelp();
         return 0;
     }
+    if (!vClientCmd.empty())
+        return ClientMain(mapArgs, vClientCmd);
     if (mapArgs.count("easy"))
     {
         SelectEasyNetwork();
@@ -790,6 +1068,8 @@ int main(int argc, char* argv[])
 
     string strDir = GetAppDir();
     strDebugLogPath = strDir + "/debug.log";
+    if (mapArgs.count("daemon"))
+        Daemonize(strDir);
 
     // single instance per data directory
     int fdLock = open((strDir + "/.lock").c_str(), O_CREAT | O_RDWR, 0666);
@@ -833,6 +1113,16 @@ int main(int argc, char* argv[])
     }
     catch (std::exception& e) { fprintf(stderr, "Fatal: %s\n", e.what()); return 1; }
 
+    bool fServer = mapArgs.count("daemon") || mapArgs.count("server");
+    if (fServer && !StartRpcServer(strDir))
+    {
+        fprintf(stderr, "Error: command socket not available\n");
+        if (mapArgs.count("daemon"))
+        {
+            Shutdown();
+            return 1;
+        }
+    }
     printf_cli("Type 'help' for commands.\n");
     bool fTty = isatty(0);
     bool fInteractive = !mapArgs.count("noprompt") && (fTty || mapArgs.count("stdin"));
@@ -852,11 +1142,17 @@ int main(int argc, char* argv[])
         if (!getline(cin, line)) break;
         vector<string> v = Tokenize(line);
         if (v.empty()) continue;
-        try { if (!DoCommand(v)) break; }
+        bool fContinue = true;
+        pthread_mutex_lock(&g_cmdMutex);
+        try { fContinue = DoCommand(v); }
         catch (std::exception& e) { printf_cli("error: %s\n", e.what()); }
         if (!fTty) puts("<<END>>");
         fflush(stdout);
+        pthread_mutex_unlock(&g_cmdMutex);
+        if (!fContinue)
+            break;
     }
+    StopRpcServer(strDir);
     Shutdown();
     return 0;
 }
