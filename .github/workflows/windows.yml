@@ -28,6 +28,15 @@ jobs:
           cp bitcoin.exe README.md DEVIATIONS.md out/
           for dll in $(ldd bitcoin.exe | awk '/\/usr\/bin\//{print $3}'); do cp "$dll" out/; done
           ls -la out
+      - name: Smoke test outside MSYS2 (plain Windows, only the collected files)
+        shell: pwsh
+        run: |
+          $env:PATH = "$env:SystemRoot\System32;$env:SystemRoot"
+          Set-Location out
+          .\bitcoin.exe -h | Select-Object -First 3
+          $out = "getinfo", "stop" | .\bitcoin.exe -easy -stdin -datadir="$env:RUNNER_TEMP\smoke" -port=18999
+          $out
+          if (-not ($out -match "network\s*: easy")) { throw "smoke test failed" }
       - uses: actions/upload-artifact@v4
         with:
           name: bitcoin-cli-windows-x86_64
