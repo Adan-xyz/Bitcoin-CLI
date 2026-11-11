@@ -1,0 +1,66 @@
+name: release
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+permissions:
+  contents: write
+jobs:
+  create-release:
+    if: startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-24.04
+    steps:
+      - env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release view "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1 \
+            || gh release create "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" --title "$GITHUB_REF_NAME" --generate-notes
+  build:
+    needs: create-release
+    if: ${{ !cancelled() && (needs.create-release.result == 'success' || needs.create-release.result == 'skipped') }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { os: ubuntu-22.04,     name: linux-x86_64 }
+          - { os: ubuntu-22.04-arm, name: linux-arm64 }
+          - { os: macos-latest,     name: macos-arm64 }
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v5
+      - name: Dependencies (Linux)
+        if: runner.os == 'Linux'
+        run: sudo apt-get update && sudo apt-get install -y g++ make pkg-config libssl-dev libdb++-dev procps
+      - name: Dependencies (macOS)
+        if: runner.os == 'macOS'
+        run: brew install openssl@3 berkeley-db@5
+      - name: Build static binary and run the test suite on it
+        run: |
+          if [ "$RUNNER_OS" = "macOS" ]; then
+            export PKG_CONFIG_PATH="$(brew --prefix openssl@3)/lib/pkgconfig"
+            export MACOSX_DEPLOYMENT_TARGET=11.0
+            export MAKEARGS="STATIC=1 DB_INC=$(brew --prefix berkeley-db@5)/include DB_LIBDIR=$(brew --prefix berkeley-db@5)/lib"
+          else
+            export MAKEARGS="STATIC=1"
+          fi
+          bash test.sh
+      - name: Check that no crypto or database library is linked dynamically
+        run: |
+          if [ "$RUNNER_OS" = "macOS" ]; then otool -L bitcoin; else ldd bitcoin; fi
+          if { if [ "$RUNNER_OS" = "macOS" ]; then otool -L bitcoin; else ldd bitcoin; fi; } | grep -E "libssl|libcrypto|libdb|libstdc"; then
+            echo "static linking did not take effect"; exit 1
+          fi
+      - name: Package
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          VERSION="${GITHUB_REF_NAME:-dev}"
+          DIR="bitcoin-cli-${VERSION}-${{ matrix.name }}"
+          mkdir "$DIR"
+          cp bitcoin README.md DEVIATIONS.md "$DIR"/
+          tar czf "$DIR.tar.gz" "$DIR"
+          if command -v sha256sum >/dev/null; then sha256sum "$DIR.tar.gz" > "$DIR.tar.gz.sha256"; else shasum -a 256 "$DIR.tar.gz" > "$DIR.tar.gz.sha256"; fi
+          cat "$DIR.tar.gz.sha256"
+          if [[ "$GITHUB_REF" == refs/tags/v* ]]; then
+            gh release upload "$GITHUB_REF_NAME" "$DIR.tar.gz" "$DIR.tar.gz.sha256" --repo "$GITHUB_REPOSITORY" --clobber
+          fi

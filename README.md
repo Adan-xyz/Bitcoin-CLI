@@ -16,6 +16,18 @@ Every push runs `test.sh` (clean build, 2-node sync, send, restart) in CI.
 | Replit | GCC, OpenSSL 1.1.1, BerkeleyDB 5.3 | passing (manual) |
 | Windows | use WSL2 or Docker (see below) | not native |
 
+## Download (prebuilt binaries)
+
+Each tagged release on the GitHub **Releases** page has a tarball per platform, built and tested by CI (`.github/workflows/release.yml`): `linux-x86_64`, `linux-arm64` (glibc 2.35 or newer, e.g. Ubuntu 22.04+, Debian 12+) and `macos-arm64` (Apple Silicon, macOS 11+). OpenSSL and BerkeleyDB are linked statically, so nothing needs to be installed.
+
+~~~sh
+sha256sum -c bitcoin-cli-*.tar.gz.sha256     # macOS: shasum -a 256 -c
+tar xzf bitcoin-cli-*.tar.gz && cd bitcoin-cli-*/
+./bitcoin -easy -gen
+~~~
+
+Maintainers: push a tag such as `v0.1.0-cli.1` to publish a release (`git tag v0.1.0-cli.1 && git push origin v0.1.0-cli.1`). Running the workflow by hand only builds and tests, it publishes nothing.
+
 ## Build
 
 ### Debian / Ubuntu

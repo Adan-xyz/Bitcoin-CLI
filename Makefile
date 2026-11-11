@@ -15,6 +15,19 @@ DB_LIBDIR := $(firstword $(wildcard $(filter-out %-dev %-doc %-bin %.drv,$(wildc
 DB_CFLAGS := $(if $(DB_INC),-I$(DB_INC))
 DB_LIBS   := $(if $(DB_LIBDIR),-L$(DB_LIBDIR) -Wl$(comma)-rpath$(comma)$(DB_LIBDIR)) -ldb_cxx
 
+# STATIC=1: link BerkeleyDB and OpenSSL statically (used for release binaries)
+ifeq ($(STATIC),1)
+  ifeq ($(shell uname -s),Darwin)
+    SSL_LIBDIR := $(shell pkg-config --variable=libdir openssl)
+    DB_LIBS    := $(DB_LIBDIR)/libdb_cxx.a
+    SSL_LIBS   := $(SSL_LIBDIR)/libssl.a $(SSL_LIBDIR)/libcrypto.a
+  else
+    DB_LIBS    := $(if $(DB_LIBDIR),-L$(DB_LIBDIR)) -Wl$(comma)-Bstatic -ldb_cxx -Wl$(comma)-Bdynamic
+    SSL_LIBS   := -Wl$(comma)-Bstatic -lssl -lcrypto -Wl$(comma)-Bdynamic -ldl -pthread
+    CXXFLAGS   += -static-libstdc++ -static-libgcc
+  endif
+endif
+
 SRCS := util script db net main market irc sha cli
 OBJS := $(SRCS:%=obj/%.o)
 
