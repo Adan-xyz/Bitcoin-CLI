@@ -91,3 +91,47 @@ jobs:
           if [[ "$GITHUB_REF" == refs/tags/v* ]]; then
             gh release upload "$GITHUB_REF_NAME" "$DIR.tar.gz" "$DIR.tar.gz.sha256" --repo "$GITHUB_REPOSITORY" --clobber
           fi
+  windows:
+    needs: create-release
+    if: ${{ !cancelled() && (needs.create-release.result == 'success' || needs.create-release.result == 'skipped') }}
+    runs-on: windows-latest
+    defaults:
+      run:
+        shell: msys2 {0}
+    steps:
+      - uses: actions/checkout@v5
+      - uses: msys2/setup-msys2@v2
+        with:
+          msystem: MSYS
+          update: false
+          install: gcc make pkgconf openssl-devel libdb-devel procps-ng
+      - name: Build and run the test suite
+        run: bash test.sh
+      - name: Collect runtime DLLs
+        run: |
+          mkdir out
+          cp bitcoin.exe README.md DEVIATIONS.md out/
+          for dll in $(ldd bitcoin.exe | awk '/\/usr\/bin\//{print $3}'); do cp "$dll" out/; done
+          ls -la out
+      - name: Smoke test outside MSYS2 (plain Windows, only the collected files)
+        shell: pwsh
+        run: |
+          $env:PATH = "$env:SystemRoot\System32;$env:SystemRoot"
+          Set-Location out
+          $out = "getinfo", "stop" | .\bitcoin.exe -easy -stdin -datadir="$env:RUNNER_TEMP\smoke" -port=18999
+          $out
+          if (-not ($out -match "network\s*: easy")) { throw "smoke test failed" }
+      - name: Package and upload
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          $version = if ($env:GITHUB_REF_NAME) { $env:GITHUB_REF_NAME } else { "dev" }
+          $name = "bitcoin-cli-$version-windows-x86_64"
+          Compress-Archive -Path out\* -DestinationPath "$name.zip"
+          $hash = (Get-FileHash "$name.zip" -Algorithm SHA256).Hash.ToLower()
+          [System.IO.File]::WriteAllText("$name.zip.sha256", "$hash  $name.zip`n")
+          Get-Content "$name.zip.sha256"
+          if ($env:GITHUB_REF -like "refs/tags/v*") {
+            gh release upload $env:GITHUB_REF_NAME "$name.zip" "$name.zip.sha256" --repo $env:GITHUB_REPOSITORY --clobber
+          }

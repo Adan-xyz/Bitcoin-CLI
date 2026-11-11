@@ -14,11 +14,11 @@ Every push runs `test.sh` (clean build, 2-node sync, send, restart) in CI.
 | Docker (Debian 12) | GCC, OpenSSL 3, BerkeleyDB 5.3 | passing |
 | Android (Termux) | clang/libc++, OpenSSL 3, BerkeleyDB 5.3 | passing (manual) |
 | Replit | GCC, OpenSSL 1.1.1, BerkeleyDB 5.3 | passing (manual) |
-| Windows | use WSL2 or Docker (see below) | not native |
+| Windows x86-64 | MSYS2/Cygwin runtime, GCC 15, OpenSSL 3, BerkeleyDB 6.2 | passing (CI) |
 
 ## Download (prebuilt binaries)
 
-Each tagged release on the GitHub **Releases** page has a tarball per platform, built and tested by CI (`.github/workflows/release.yml`): `linux-x86_64`, `linux-arm64` (glibc 2.35 or newer, e.g. Ubuntu 22.04+, Debian 12+) and `macos-arm64` (Apple Silicon, macOS 11+). OpenSSL is linked statically, and BerkeleyDB is linked statically on Linux (on macOS its `.dylib` ships next to the binary, keep the files together), so nothing needs to be installed.
+Each tagged release on the GitHub **Releases** page has a tarball per platform, built and tested by CI (`.github/workflows/release.yml`): `linux-x86_64`, `linux-arm64` (glibc 2.35 or newer, e.g. Ubuntu 22.04+, Debian 12+), `macos-arm64` (Apple Silicon, macOS 11+) and `windows-x86_64` (a zip, see the Windows section). OpenSSL is linked statically, and BerkeleyDB is linked statically on Linux (on macOS its `.dylib` ships next to the binary, keep the files together), so nothing needs to be installed.
 
 ~~~sh
 sha256sum -c bitcoin-cli-*.tar.gz.sha256     # macOS: shasum -a 256 -c
@@ -50,7 +50,13 @@ make CXX=clang++
 ~~~
 
 ### Windows
-Install WSL2 (Ubuntu) and follow the Debian/Ubuntu steps inside it, or use Docker Desktop (below). Native Windows builds are not supported.
+Download `windows-x86_64.zip` from the Releases page, unzip it and keep all files together (`bitcoin.exe` plus the MSYS2/Cygwin runtime DLLs). Run it from PowerShell or cmd and always pass an explicit data directory:
+
+~~~sh
+.\bitcoin.exe -easy -gen -datadir=C:\btc\node1
+~~~
+
+Paths are shown in Cygwin style (`/cygdrive/c/btc/node1`); Windows paths are accepted on the command line. The daemon mode and the local client work through the same runtime. The binary is unsigned, so Windows SmartScreen may warn on first run. To build it yourself, see `.github/workflows/windows.yml` (MSYS2, `MSYSTEM=MSYS`), or use WSL2 with the Debian/Ubuntu steps, or Docker Desktop.
 
 ### Docker
 ~~~sh

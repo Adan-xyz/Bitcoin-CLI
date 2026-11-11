@@ -52,6 +52,7 @@ Direct IP-to-IP payment dialog, Options dialog (fee, proxy, start-up settings), 
 2. **Script arithmetic through `CBigNum`:** only the standard pay-to-pubkey-hash path is tested; edge cases of `OP_MUL`, `OP_DIV`, `OP_MOD` (negative numbers) are not.
 3. **64-bit and data formats:** `long` is 8 bytes here (4 in the original); `wallet.dat` and `blkindex.dat` are written by BerkeleyDB 5.3 (original: 4.7) and may not be interchangeable with the Windows build. The genesis hash matches, which covers basic serialization, but no real historical blocks were available to compare.
 4. **All compiler warnings are disabled** (`-w -fpermissive`), so 64-bit conversion issues could be hidden.
+5. **Windows build:** it runs on the MSYS2/Cygwin POSIX runtime (not Winsock) and links BerkeleyDB 6.2 (MSYS2 has no 5.3). BerkeleyDB 6.x is under the AGPL-3.0 and its files are not guaranteed to be readable by the 5.3 builds, so do not move data directories between the Windows build and the others.
 
 ## 6. Known flaws of 0.1.0 that remain
 The port is faithful to the original, including weaknesses fixed in later releases (for example an output value overflow, an `OP_RETURN` bug and an `OP_LSHIFT` crash). Do not use it to hold real value or connect it to a live network.
