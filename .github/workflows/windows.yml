@@ -1,0 +1,34 @@
+name: windows
+on:
+  push:
+  workflow_dispatch:
+jobs:
+  msys2:
+    runs-on: windows-latest
+    defaults:
+      run:
+        shell: msys2 {0}
+    steps:
+      - uses: actions/checkout@v5
+      - uses: msys2/setup-msys2@v2
+        with:
+          msystem: MSYS
+          update: false
+          install: gcc make pkgconf openssl-devel libdb-devel procps-ng
+      - name: Show toolchain
+        run: |
+          gcc --version | head -1
+          pkg-config --modversion openssl
+          ls /usr/include/db_cxx.h /usr/lib/libdb_cxx* || true
+      - name: Build and run the test suite
+        run: bash test.sh
+      - name: Collect runtime DLLs
+        run: |
+          mkdir out
+          cp bitcoin.exe README.md DEVIATIONS.md out/
+          for dll in $(ldd bitcoin.exe | awk '/\/usr\/bin\//{print $3}'); do cp "$dll" out/; done
+          ls -la out
+      - uses: actions/upload-artifact@v4
+        with:
+          name: bitcoin-cli-windows-x86_64
+          path: out
