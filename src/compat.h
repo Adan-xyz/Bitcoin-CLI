@@ -24,12 +24,8 @@
 #include <string.h>
 #include <ctype.h>
 #include <limits.h>
-#ifdef __GLIBC__
-#include <cxxabi.h>
-#define CATCH_FORCED_UNWIND catch (abi::__forced_unwind&) { throw; }
-#else
-#define CATCH_FORCED_UNWIND
-#endif
+struct ThreadExit {};
+#define CATCH_FORCED_UNWIND catch (ThreadExit&) { throw; }
 
 // ---- types
 typedef int SOCKET;
@@ -94,7 +90,7 @@ inline int _beginthread(void (*fn)(void*), unsigned int, void* arg)
     struct Run {
         static void* go(void* p) {
             Ctx c = *(Ctx*)p; delete (Ctx*)p;
-            c.fn(c.arg);
+            try { c.fn(c.arg); } catch (ThreadExit&) { }
             return NULL;
         }
     };
@@ -109,7 +105,7 @@ inline int _beginthread(void (*fn)(void*), unsigned int, void* arg)
     if (ret != 0) { delete pc; return -1; }
     return 1;
 }
-inline void _endthread() { pthread_exit(NULL); }
+inline void _endthread() { throw ThreadExit(); }
 #define GetCurrentThread()              0
 #define SetThreadPriority(h, p)         ((void)0)
 #define THREAD_PRIORITY_LOWEST          0

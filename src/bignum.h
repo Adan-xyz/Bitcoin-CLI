@@ -141,7 +141,7 @@ public:
         for (int i = 0; i < 8; i++)
         {
             unsigned char c = (n >> 56) & 0xff;
-            n <<= 8;
+            n = (int64)((uint64)n << 8);
             if (fLeadingZeroes)
             {
                 if (c == 0)
@@ -304,7 +304,7 @@ public:
         while (isxdigit(*psz))
         {
             *this <<= 4;
-            int n = phexdigit[*psz++];
+            int n = phexdigit[(unsigned char)*psz++];
             *this += n;
         }
         if (fNegative)

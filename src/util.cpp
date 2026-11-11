@@ -171,8 +171,8 @@ void PrintException(std::exception* pex, const char* pszThread)
 
 void ParseString(const string& str, char c, vector<string>& v)
 {
-    unsigned int i1 = 0;
-    unsigned int i2;
+    size_t i1 = 0;
+    size_t i2;
     do
     {
         i2 = str.find(c, i1);

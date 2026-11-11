@@ -272,7 +272,7 @@ static bool DoCommand(const vector<string>& v)
                     strStatus = wtx.GetBlocksToMaturity() > 0 ? strprintf("generated, matures in %d blocks", wtx.GetBlocksToMaturity()) : "generated";
                 else
                     strStatus = strprintf("%d confirmations", wtx.GetDepthInMainChain());
-                printf_cli("%s  %+16s  %s  %s\n", DateTimeStr(vSorted[i].first).c_str(),
+                printf_cli("%s  %16s  %s  %s\n", DateTimeStr(vSorted[i].first).c_str(),
                            FormatMoney(nNet, true).c_str(), vSorted[i].second.ToString().substr(0, 16).c_str(), strStatus.c_str());
             }
         }

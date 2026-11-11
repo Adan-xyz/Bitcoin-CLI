@@ -3,7 +3,7 @@
 Audit of this port against the original source (23 source files compared). Summary: no change to block or transaction validation logic. Changes are portability fixes, default-behavior changes, removed GUI features, and opt-in additions.
 
 ## Unchanged files
-`uint256.h`, `key.h`, `script.h`, `db.h`, `irc.cpp`, `sha.cpp`, `market.h`, `market.cpp`.
+`key.h`, `script.h`, `db.h`, `irc.cpp`, `sha.cpp`, `market.h`, `market.cpp`. (`uint256.h` changed only by two `(unsigned char)` casts in hex parsing, see section 1b.)
 Validation in `main.cpp` (`CheckBlock`, `ConnectInputs`, ...) and script evaluation in `script.cpp` are untouched. `script.cpp` changed only 3 lines (`BN_mul`/`BN_div`/`BN_mod` calls adapted to the new `CBigNum`).
 
 ## 1. Portability changes (no intended behavior change)
@@ -17,6 +17,13 @@ Validation in `main.cpp` (`CheckBlock`, `ConnectInputs`, ...) and script evaluat
 - clang/libc++ fixes: `::bind` (clashes with `std::bind` under `using namespace std`), `(char)0xf9...` for `pchMessageStart`, `DbEnv((u_int32_t)0)`, `CDataStream::insert(iterator, const char*, const char*)` implemented directly (same special case, no iterator cast), `min<unsigned int>`.
 - `catch (...)` no longer swallows glibc forced unwind (thread exit) as an exception.
 - `*(long*)` host-address read changed to `unsigned int` (64-bit).
+
+## 1b. Fixes found by the CI sanitizer and warning jobs
+- `ParseString` (`util.cpp`, used by the IRC code): indices were `unsigned int` but compared with `npos` (64-bit), so the loop never ended on 64-bit builds. Now `size_t`.
+- `CBigNum::setint64`: signed left shift (`n <<= 8`) overflowed, which is undefined behavior; now shifts as unsigned. Same result.
+- Hex parsing (`uint256.h`, `bignum.h`): a `char` index into the digit table could be negative for non-ASCII input (out-of-bounds read); now cast to `unsigned char`.
+- Thread exit: `_endthread()` now throws a `ThreadExit` exception (caught in the thread start routine) instead of calling `pthread_exit`. This unwinds the stack properly on every platform and removes a sanitizer report about glibc's forced-unwind exception.
+- Reviewed and left as is: `-Winfinite-recursion` on the three `Thread*Handler` functions is a false positive of the original `IMPLEMENT_RANDOMIZE_STACK` trick (it recurses a bounded, random number of times); ~210 `-Wdeprecated-declarations` come from OpenSSL 3 deprecating the `EC_KEY`/`BN` APIs the code relies on (a reason to replace them in a modern version).
 
 ## 2. Changed default behavior
 - Data directory: `~/.bitcoin` (original: `%APPDATA%\Bitcoin`). Log goes to `<datadir>/debug.log`; every `printf` is redirected there.
