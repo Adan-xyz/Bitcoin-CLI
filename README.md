@@ -18,7 +18,7 @@ Every push runs `test.sh` (clean build, 2-node sync, send, restart) in CI.
 
 ## Download (prebuilt binaries)
 
-Each tagged release on the GitHub **Releases** page has a tarball per platform, built and tested by CI (`.github/workflows/release.yml`): `linux-x86_64`, `linux-arm64` (glibc 2.35 or newer, e.g. Ubuntu 22.04+, Debian 12+) and `macos-arm64` (Apple Silicon, macOS 11+). OpenSSL and BerkeleyDB are linked statically, so nothing needs to be installed.
+Each tagged release on the GitHub **Releases** page has a tarball per platform, built and tested by CI (`.github/workflows/release.yml`): `linux-x86_64`, `linux-arm64` (glibc 2.35 or newer, e.g. Ubuntu 22.04+, Debian 12+) and `macos-arm64` (Apple Silicon, macOS 11+). OpenSSL is linked statically, and BerkeleyDB is linked statically on Linux (on macOS its `.dylib` ships next to the binary, keep the files together), so nothing needs to be installed.
 
 ~~~sh
 sha256sum -c bitcoin-cli-*.tar.gz.sha256     # macOS: shasum -a 256 -c

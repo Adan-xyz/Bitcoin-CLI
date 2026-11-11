@@ -19,7 +19,8 @@ DB_LIBS   := $(if $(DB_LIBDIR),-L$(DB_LIBDIR) -Wl$(comma)-rpath$(comma)$(DB_LIBD
 ifeq ($(STATIC),1)
   ifeq ($(shell uname -s),Darwin)
     SSL_LIBDIR := $(shell pkg-config --variable=libdir openssl)
-    DB_LIBS    := $(DB_LIBDIR)/libdb_cxx.a
+    DB_STATICLIB := $(firstword $(wildcard $(DB_LIBDIR)/libdb_cxx.a $(DB_LIBDIR)/libdb_cxx-5.3.a))
+    DB_LIBS    := $(if $(DB_STATICLIB),$(DB_STATICLIB),-L$(DB_LIBDIR) -ldb_cxx)
     SSL_LIBS   := $(SSL_LIBDIR)/libssl.a $(SSL_LIBDIR)/libcrypto.a
   else
     DB_LIBS    := $(if $(DB_LIBDIR),-L$(DB_LIBDIR)) -Wl$(comma)-Bstatic -ldb_cxx -Wl$(comma)-Bdynamic

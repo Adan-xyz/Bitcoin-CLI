@@ -44,12 +44,38 @@ jobs:
             export MAKEARGS="STATIC=1"
           fi
           bash test.sh
-      - name: Check that no crypto or database library is linked dynamically
+      - name: Check that no crypto or database library is linked dynamically (Linux)
+        if: runner.os == 'Linux'
         run: |
-          if [ "$RUNNER_OS" = "macOS" ]; then otool -L bitcoin; else ldd bitcoin; fi
-          if { if [ "$RUNNER_OS" = "macOS" ]; then otool -L bitcoin; else ldd bitcoin; fi; } | grep -E "libssl|libcrypto|libdb|libstdc"; then
+          ldd bitcoin
+          if ldd bitcoin | grep -E "libssl|libcrypto|libdb|libstdc"; then
             echo "static linking did not take effect"; exit 1
           fi
+      - name: Make the macOS binary relocatable (bundle BerkeleyDB dylib)
+        if: runner.os == 'macOS'
+        run: |
+          mkdir -p dist
+          cp bitcoin dist/bitcoin
+          for pass in 1 2; do
+            for f in dist/*; do
+              for dep in $(otool -L "$f" | awk 'NR>1 {print $1}' | grep '^/opt/homebrew' || true); do
+                name=$(basename "$dep")
+                if [ ! -f "dist/$name" ]; then cp -L "$dep" "dist/$name"; chmod u+w "dist/$name"; fi
+                install_name_tool -change "$dep" "@executable_path/$name" "$f"
+                case "$f" in *.dylib) install_name_tool -id "@executable_path/$(basename "$f")" "$f" ;; esac
+              done
+            done
+          done
+          for f in dist/*; do codesign --force --sign - "$f"; done
+          ls -la dist
+          otool -L dist/bitcoin
+          if otool -L dist/bitcoin | grep -q /opt/homebrew; then echo "binary still depends on Homebrew paths"; exit 1; fi
+      - name: Smoke test the relocated binary (macOS)
+        if: runner.os == 'macOS'
+        run: |
+          cd dist
+          (echo getinfo; sleep 4; echo stop) | ./bitcoin -easy -stdin -datadir="$RUNNER_TEMP/smoke" -port=18999 | tee "$RUNNER_TEMP/smoke.out"
+          grep -q "^network *: easy" "$RUNNER_TEMP/smoke.out"
       - name: Package
         env:
           GH_TOKEN: ${{ github.token }}
@@ -57,7 +83,8 @@ jobs:
           VERSION="${GITHUB_REF_NAME:-dev}"
           DIR="bitcoin-cli-${VERSION}-${{ matrix.name }}"
           mkdir "$DIR"
-          cp bitcoin README.md DEVIATIONS.md "$DIR"/
+          if [ -d dist ]; then cp dist/* "$DIR"/; else cp bitcoin "$DIR"/; fi
+          cp README.md DEVIATIONS.md "$DIR"/
           tar czf "$DIR.tar.gz" "$DIR"
           if command -v sha256sum >/dev/null; then sha256sum "$DIR.tar.gz" > "$DIR.tar.gz.sha256"; else shasum -a 256 "$DIR.tar.gz" > "$DIR.tar.gz.sha256"; fi
           cat "$DIR.tar.gz.sha256"
