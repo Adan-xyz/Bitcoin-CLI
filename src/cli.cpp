@@ -3,6 +3,9 @@
 #include <sys/file.h>
 #include <sys/un.h>
 #include <sys/wait.h>
+#ifndef BUILD_ID
+#define BUILD_ID "unknown"
+#endif
 #undef printf
 // all command output goes through g_out so that a command run for a socket client can be captured
 static FILE* g_out = stdout;
@@ -178,7 +181,7 @@ static bool DoCommand(const vector<string>& v)
         printf_cli("%s\n", FormatMoney(GetBalance()).c_str());
     else if (cmd == "getinfo")
     {
-        printf_cli("version       : 0.1.0 (cli)\n");
+        printf_cli("version       : 0.1.0 (cli) %s\n", BUILD_ID);
         printf_cli("datadir       : %s\n", GetAppDir().c_str());
         printf_cli("blocks        : %d\n", nBestHeight);
         printf_cli("bestblock     : %s\n", hashBestChain.ToString().c_str());
@@ -468,7 +471,7 @@ static bool DoCommand(const vector<string>& v)
         int nKnown = 0;
         CRITICAL_BLOCK(cs_mapAddresses)
             nKnown = mapAddresses.size();
-        printf_cli("version       : 0.1.0 (cli)\n");
+        printf_cli("version       : 0.1.0 (cli) %s\n", BUILD_ID);
         printf_cli("protocol      : %d\n", VERSION);
         printf_cli("network       : %s\n", fEasy ? "easy (test)" : "main genesis");
         printf_cli("listening on  : %s\n", addrLocalHost.ToString().c_str());
@@ -1020,6 +1023,7 @@ static int ClientMain(map<string, string>& mapArgs, const vector<string>& vCmd)
 int main(int argc, char* argv[])
 {
     setvbuf(stdout, NULL, _IOLBF, 0);
+    umask(077);   // data directory 0700, every file we create 0600 (wallet.dat holds private keys)
     map<string, string> mapArgs;
     vector<string> vClientCmd;
     for (int i = 1; i < argc; i++)
@@ -1040,8 +1044,14 @@ int main(int argc, char* argv[])
     {
         puts("Usage: bitcoin [-datadir=DIR] [-gen] [-addnode=IP[:PORT]] [-port=N] [-proxy=IP:PORT]\n"
              "               [-debug] [-printtoconsole] [-irc] [-noprompt] [-easy] [-solo] [-stdin]\n"
-             "               [-daemon] [-server]   client: bitcoin [-datadir=DIR] <command> [args]");
+             "               [-daemon] [-server] [-version]\n"
+             "               client: bitcoin [-datadir=DIR] <command> [args]");
         PrintHelp();
+        return 0;
+    }
+    if (mapArgs.count("version"))
+    {
+        printf_cli("Bitcoin 0.1.0 (cli) %s\n", BUILD_ID);
         return 0;
     }
     if (!vClientCmd.empty())
@@ -1054,7 +1064,7 @@ int main(int argc, char* argv[])
     }
     if (mapArgs.count("datadir"))
     {
-        mkdir(mapArgs["datadir"].c_str(), 0777);
+        mkdir(mapArgs["datadir"].c_str(), 0700);
         char rp[PATH_MAX];
         strSetDataDir = realpath(mapArgs["datadir"].c_str(), rp) ? string(rp) : mapArgs["datadir"];
     }
@@ -1067,6 +1077,12 @@ int main(int argc, char* argv[])
     if (mapArgs.count("dropmessages")) nDropMessagesTest = atoi(mapArgs["dropmessages"].c_str());
 
     string strDir = GetAppDir();
+    {
+        // tighten a data directory created by an older version (only if it is ours)
+        struct stat stDir;
+        if (stat(strDir.c_str(), &stDir) == 0 && stDir.st_uid == getuid() && (stDir.st_mode & 077))
+            chmod(strDir.c_str(), 0700);
+    }
     strDebugLogPath = strDir + "/debug.log";
     if (mapArgs.count("daemon"))
         Daemonize(strDir);

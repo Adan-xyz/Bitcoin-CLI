@@ -62,7 +62,7 @@ inline int ioctlsocket_nb(SOCKET s, int nb)
 #define _I64_MAX        LLONG_MAX
 #define _vsnprintf      vsnprintf
 #define stricmp         strcasecmp
-#define _mkdir(p)       mkdir((p), 0777)
+#define _mkdir(p)       mkdir((p), 0700)
 inline char* strlwr(char* s) { for (char* p = s; *p; p++) *p = tolower((unsigned char)*p); return s; }
 #define ExitProcess(n)  exit(n)
 

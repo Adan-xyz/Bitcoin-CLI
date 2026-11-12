@@ -2,6 +2,8 @@ name: windows
 on:
   push:
   workflow_dispatch:
+permissions:
+  contents: read
 jobs:
   msys2:
     runs-on: windows-latest
@@ -25,7 +27,7 @@ jobs:
       - name: Collect runtime DLLs
         run: |
           mkdir out
-          cp bitcoin.exe README.md DEVIATIONS.md out/
+          cp bitcoin.exe README.md DEVIATIONS.md LICENSE THIRD_PARTY_NOTICES.md out/
           for dll in $(ldd bitcoin.exe | awk '/\/usr\/bin\//{print $3}'); do cp "$dll" out/; done
           ls -la out
       - name: Smoke test outside MSYS2 (plain Windows, only the collected files)

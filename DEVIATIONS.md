@@ -34,6 +34,7 @@ Validation in `main.cpp` (`CheckBlock`, `ConnectInputs`, ...) and script evaluat
 - `DB_PRIVATE` removed from the BerkeleyDB environment flags (fails with `DB_RECOVER` on BDB 5.x).
 - Genesis debug prints and the debug-only merkle-root assertion removed (`assert(block.GetHash() == hashGenesisBlock)` remains).
 - Single-instance protection uses a `flock` on `<datadir>/.lock`.
+- Files are created private: the process sets `umask(077)`, so the data directory is 0700 and `wallet.dat`, the block files and logs are 0600 (the original had no such concept on Windows; without this the private keys in `wallet.dat` were readable by other local users on Linux and macOS). An existing data directory owned by the user is tightened to 0700 on start.
 
 ## 3. Removed GUI features
 Direct IP-to-IP payment dialog, Options dialog (fee, proxy, start-up settings), product/market UI (market code still compiles but is unreachable), visual address book and wxWidgets message boxes. The transaction fee setting (`nTransactionFee`) is restored as the `setfee` command; the GUI "message" field is restored as the optional comment of `send`.
@@ -41,7 +42,7 @@ Direct IP-to-IP payment dialog, Options dialog (fee, proxy, start-up settings), 
 ## 4. Additions (opt-in)
 - `-easy`: separate test network (own genesis, fixed low difficulty). The mainline genesis hash is unchanged (`000000000019d6689c08...ce26f`). A data directory refuses to load under the other mode.
 - `-solo`: lets the miner run without peers (the original miner waits for at least one peer). In `-easy` mode this is implied.
-- `-stdin`, hashrate and estimated block time in `getinfo`.
+- `-stdin`, `-version`, hashrate and estimated block time in `getinfo`; `getinfo` and `getnetworkinfo` also print the build id.
 - `-daemon` / `-server` and client mode (`bitcoin <command>`): the node serves the same commands over a Unix domain socket in the data directory (mode 0600, same user only, no network port, no password). Commands are tokenized on whitespace, exactly like the prompt.
 - CLI commands: `getinfo`, `getbalance`, `getnewaddress`, `listaddresses`, `send`, `listtransactions`, `gen`, `addnode`, `peers`/`getpeerinfo`, `getblockcount`, `getblockhash`, `getblock`, `gettransaction`, `getdifficulty`, `validateaddress`, `setlabel`, `backupwallet`, `setfee`, `listunspent`, `getreceivedbyaddress`, `listreceivedbyaddress`, `dumpprivkey`, `importprivkey`, `rescan`, `rebroadcast`, `getbestblockhash`, `getchaintips`, `getrawmempool`, `getmempoolinfo`, `getrawtransaction`, `generate`, `getconnectioncount`, `getnetworkinfo`, `listknownpeers`, `disconnectnode`, `uptime`.
 - `dumpprivkey` prints the raw DER private key as hex (0.1 has no WIF format). Private keys are stored unencrypted in `wallet.dat`, as in the original.

@@ -16,8 +16,11 @@ RUN if [ "$RUN_TESTS" = "1" ]; then bash test.sh; fi
 
 FROM ${BASE}
 RUN apt-get update && apt-get install -y --no-install-recommends libdb5.3++ libssl3 \
-    && rm -rf /var/lib/apt/lists/*
+    && rm -rf /var/lib/apt/lists/* \
+    && useradd --system --uid 10001 --create-home btc \
+    && mkdir /data && chown btc:btc /data
 COPY --from=build /src/bitcoin /usr/local/bin/bitcoin
+USER btc
 VOLUME /data
 EXPOSE 8333
 ENTRYPOINT ["/usr/local/bin/bitcoin", "-datadir=/data"]

@@ -6,18 +6,20 @@ PASS=0; FAIL=0
 ok(){ echo "PASS: $1"; PASS=$((PASS+1)); }
 bad(){ echo "FAIL: $1"; FAIL=$((FAIL+1)); }
 T=$(mktemp -d 2>/dev/null || mktemp -d -t btccli)
-pkill -f "bitcoin -easy" 2>/dev/null; sleep 1
-cleanup(){ exec 3>&- 4>&- 2>/dev/null; pkill -f "bitcoin -easy" 2>/dev/null; }
+pkill -f "datadir=$PWD/t[123]" 2>/dev/null; sleep 1
+cleanup(){ exec 3>&- 4>&- 2>/dev/null; pkill -f "datadir=$PWD/t[123]" 2>/dev/null; }
 trap cleanup EXIT
 
 rm -rf t1 t2 t3 obj bitcoin
 if make -j4 ${MAKEARGS:-} >"$T/build.log" 2>&1 && [ -x ./bitcoin ]; then ok "clean build"; else bad "clean build"; tail -30 "$T/build.log"; exit 1; fi
 
+./bitcoin -version | grep -q "^Bitcoin 0.1.0 (cli)" && ok "version flag" || bad "version flag"
+
 start(){ # n fd args...
   local n=$1 fd=$2; shift 2
   [ -p "$T/$n.in" ] || mkfifo "$T/$n.in"
   : >> "$T/$n.out"
-  ./bitcoin -easy -stdin "$@" < "$T/$n.in" > "$T/$n.out" 2>&1 &
+  ./bitcoin -easy -stdin "$@" < "$T/$n.in" >> "$T/$n.out" 2>&1 &
   eval "P_$n=$!"
   eval "exec $fd>\"$T/$n.in\""
 }
@@ -44,6 +46,15 @@ sleep 3
 for i in $(seq 1 90); do h=$(blocks n1); [ "${h:-0}" -ge 130 ] 2>/dev/null && break; sleep 2; done
 [ "${h:-0}" -ge 130 ] 2>/dev/null && ok "mining reached height $h" || { bad "mining (height=${h:-none})"; exit 1; }
 
+case "$(uname -s)" in
+  MINGW*|MSYS*|CYGWIN*)
+    ok "data directory permissions (not checked on Windows)"
+    ok "wallet permissions (not checked on Windows)" ;;
+  *)
+    dperm=$(ls -ld "$PWD/t1" | cut -c1-10); wperm=$(ls -l "$PWD/t1/wallet.dat" | cut -c1-10)
+    [ "$dperm" = "drwx------" ] && ok "data directory is private (0700)" || bad "data directory permissions: $dperm"
+    [ "$wperm" = "-rw-------" ] && ok "wallet.dat is private (0600)" || bad "wallet.dat permissions: $wperm" ;;
+esac
 start n2 4 -datadir="$PWD/t2" -port=18334 -addnode=127.0.0.1:18333
 sleep 3
 cmd n1 gen off >/dev/null; sleep 3
@@ -66,11 +77,18 @@ cmd n1 getnetworkinfo | grep -q "^network *: easy" && ok "getnetworkinfo" || bad
 cmd n1 uptime | grep -Eq '^[0-9]+d [0-9]+h [0-9]+m [0-9]+s$' && ok "uptime" || bad "uptime"
 cmd n1 getchaintips | grep -q "active" && ok "getchaintips" || bad "getchaintips"
 cmd n1 getmempoolinfo | grep -q "^size" && ok "getmempoolinfo" || bad "getmempoolinfo"
+cmd n1 help | grep -q "getblock " && ok "help" || bad "help"
+cmd n1 getdifficulty | grep -Eq '^[0-9]+\.[0-9]+$' && ok "getdifficulty" || bad "getdifficulty"
+cmd n2 peers | grep -q "outbound" && ok "peers" || bad "peers"
+cmd n1 listknownpeers | grep -Eq "no known peers|last seen" && ok "listknownpeers" || bad "listknownpeers"
+if cmd n1 getrawmempool | grep -q "^error"; then bad "getrawmempool"; else ok "getrawmempool"; fi
 
 addr=$(cmd n2 getnewaddress | tail -1)
 echo "$addr" | grep -Eq '^1[1-9A-HJ-NP-Za-km-z]{25,34}$' && ok "address $addr" || bad "address format: $addr"
 cmd n2 validateaddress "$addr" | grep -q "^ismine *: yes" && ok "validateaddress (own)" || bad "validateaddress own"
 cmd n1 validateaddress "$addr" | grep -q "^ismine *: no" && ok "validateaddress (foreign)" || bad "validateaddress foreign"
+cmd n2 listaddresses | grep -q "$addr" && ok "listaddresses" || bad "listaddresses"
+cmd n2 setlabel "$addr" test label | grep -q "^ok" && cmd n2 listaddresses | grep -q "test label" && ok "setlabel" || bad "setlabel"
 
 sendout=$(cmd n1 send "$addr" 5)
 echo "$sendout" | grep -q "^txid" && ok "send accepted" || { bad "send: $sendout"; }
@@ -78,6 +96,7 @@ cmd n1 gen on >/dev/null
 waitfor 40 n2 5.00 && ok "n2 received 5.00" || bad "n2 balance $(bal n2) (expected 5.00)"
 txid=$(echo "$sendout" | awk '/^txid/{print $2}')
 cmd n2 gettransaction "$txid" | grep -q "^net *: +5.00" && ok "gettransaction" || bad "gettransaction ($txid)"
+cmd n2 listtransactions | grep -q "+5.00" && ok "listtransactions" || bad "listtransactions"
 cmd n1 backupwallet "$T/wallet.bak" | grep -q "backed up" && [ -s "$T/wallet.bak" ] && ok "backupwallet" || bad "backupwallet"
 cmd n1 getrawtransaction "$txid" | grep -Eq "^where *: (chain|memory pool)" && ok "getrawtransaction" || bad "getrawtransaction"
 cmd n1 listunspent | grep -q ":[0-9]" && ok "listunspent" || bad "listunspent"
@@ -122,7 +141,7 @@ sleep 3
 
 cmd n1 stop >/dev/null; cmd n2 stop >/dev/null
 sleep 3
-if pgrep -f "bitcoin -easy" >/dev/null; then bad "processes still running"; else ok "clean shutdown"; fi
+if pgrep -f "datadir=$PWD/t[12]" >/dev/null; then bad "processes still running"; else ok "clean shutdown"; fi
 if grep -qiE "exception|assert|segmentation|terminate" t1/debug.log t2/debug.log "$T"/n1.out "$T"/n2.out 2>/dev/null; then bad "errors in logs"; grep -iE "exception|assert|segmentation|terminate" t1/debug.log t2/debug.log | head -5; else ok "no exceptions in logs"; fi
 
 # daemon mode and the local client

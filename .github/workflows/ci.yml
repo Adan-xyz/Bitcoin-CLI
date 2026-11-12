@@ -1,5 +1,7 @@
 name: ci
 on: [push, pull_request, workflow_dispatch]
+permissions:
+  contents: read
 jobs:
   test:
     strategy:
@@ -16,6 +18,8 @@ jobs:
     steps:
       - uses: actions/checkout@v5
       - run: docker build --build-arg RUN_TESTS=1 -t bitcoin-cli-test .
+      - name: Run the final image (checks that the runtime libraries are present)
+        run: docker run --rm bitcoin-cli-test -version
   macos:
     runs-on: macos-latest
     steps:

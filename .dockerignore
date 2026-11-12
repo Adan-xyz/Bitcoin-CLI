@@ -1,7 +1,11 @@
 obj
+dist
+out
 bitcoin
 t1
 t2
+t3
 data
 easy*
+*.log
 .git

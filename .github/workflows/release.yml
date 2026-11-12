@@ -35,6 +35,8 @@ jobs:
         if: runner.os == 'macOS'
         run: brew install openssl@3 berkeley-db@5
       - name: Build static binary and run the test suite on it
+        env:
+          BUILD_ID: ${{ github.ref_name }}
         run: |
           if [ "$RUNNER_OS" = "macOS" ]; then
             export PKG_CONFIG_PATH="$(brew --prefix openssl@3)/lib/pkgconfig"
@@ -84,7 +86,7 @@ jobs:
           DIR="bitcoin-cli-${VERSION}-${{ matrix.name }}"
           mkdir "$DIR"
           if [ -d dist ]; then cp dist/* "$DIR"/; else cp bitcoin "$DIR"/; fi
-          cp README.md DEVIATIONS.md "$DIR"/
+          cp README.md DEVIATIONS.md LICENSE THIRD_PARTY_NOTICES.md "$DIR"/
           tar czf "$DIR.tar.gz" "$DIR"
           if command -v sha256sum >/dev/null; then sha256sum "$DIR.tar.gz" > "$DIR.tar.gz.sha256"; else shasum -a 256 "$DIR.tar.gz" > "$DIR.tar.gz.sha256"; fi
           cat "$DIR.tar.gz.sha256"
@@ -106,11 +108,13 @@ jobs:
           update: false
           install: gcc make pkgconf openssl-devel libdb-devel procps-ng
       - name: Build and run the test suite
+        env:
+          BUILD_ID: ${{ github.ref_name }}
         run: bash test.sh
       - name: Collect runtime DLLs
         run: |
           mkdir out
-          cp bitcoin.exe README.md DEVIATIONS.md out/
+          cp bitcoin.exe README.md DEVIATIONS.md LICENSE THIRD_PARTY_NOTICES.md out/
           for dll in $(ldd bitcoin.exe | awk '/\/usr\/bin\//{print $3}'); do cp "$dll" out/; done
           ls -la out
       - name: Smoke test outside MSYS2 (plain Windows, only the collected files)

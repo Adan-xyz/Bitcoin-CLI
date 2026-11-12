@@ -1,6 +1,8 @@
 # Bitcoin 0.1.0 — CLI port
 
-The original Bitcoin 0.1.0 source (Satoshi Nakamoto, 2009) ported to a console program that builds on Linux, macOS and Android (Termux). The wxWidgets GUI is replaced by a small command prompt, and the Win32 calls are replaced by a POSIX compatibility layer (`src/compat.h`). Original code: MIT/X11 license (see source headers).
+> **Experimental and for study only.** This is a faithful port of the 2009 code, including its known flaws (see `DEVIATIONS.md`). The wallet is not encrypted. Do not use it to hold real value and do not connect it to a live network.
+
+The original Bitcoin 0.1.0 source (Satoshi Nakamoto, 2009) ported to a console program that builds on Linux, macOS and Android (Termux). The wxWidgets GUI is replaced by a small command prompt, and the Win32 calls are replaced by a POSIX compatibility layer (`src/compat.h`). License: MIT (see `LICENSE`; bundled third-party components are listed in `THIRD_PARTY_NOTICES.md`).
 
 ## Tested platforms
 
@@ -13,7 +15,7 @@ Every push runs `test.sh` (clean build, 2-node sync, send, restart) in CI.
 | macOS (Apple Silicon) | clang, OpenSSL 3, BerkeleyDB 5.3 | passing |
 | Docker (Debian 12) | GCC, OpenSSL 3, BerkeleyDB 5.3 | passing |
 | Android (Termux) | clang/libc++, OpenSSL 3, BerkeleyDB 5.3 | passing (manual) |
-| Replit | GCC, OpenSSL 1.1.1, BerkeleyDB 5.3 | passing (manual) |
+| Replit | GCC, OpenSSL 1.1.1, BerkeleyDB 5.3 | verified early on (13 checks), not re-run since |
 | Windows x86-64 | MSYS2/Cygwin runtime, GCC 15, OpenSSL 3, BerkeleyDB 6.2 | passing (CI) |
 
 ## Download (prebuilt binaries)
@@ -23,8 +25,11 @@ Each tagged release on the GitHub **Releases** page has a tarball per platform, 
 ~~~sh
 sha256sum -c bitcoin-cli-*.tar.gz.sha256     # macOS: shasum -a 256 -c
 tar xzf bitcoin-cli-*.tar.gz && cd bitcoin-cli-*/
+./bitcoin -version
 ./bitcoin -easy -gen
 ~~~
+
+On macOS the binary is ad-hoc signed but not notarized, so Gatekeeper blocks files downloaded with a browser. Remove the quarantine flag once after extracting: `xattr -dr com.apple.quarantine .`
 
 Maintainers: push a tag such as `v0.1.0-cli.1` to publish a release (`git tag v0.1.0-cli.1 && git push origin v0.1.0-cli.1`). Running the workflow by hand only builds and tests, it publishes nothing.
 
@@ -66,6 +71,8 @@ docker compose up -d                               # two-node test network
 docker attach node1                                # detach: Ctrl-P Ctrl-Q
 ~~~
 
+The image runs as a non-root user (uid 10001); a bind-mounted data directory must be writable by that uid.
+
 ### Replit
 Upload the folder and press Run (`replit.nix` provides the dependencies).
 
@@ -79,7 +86,7 @@ If BerkeleyDB or OpenSSL live in a non-standard place, override the paths:
 ./bitcoin -datadir=./data -gen
 ~~~
 
-Options: `-datadir=DIR` `-gen` `-addnode=IP[:PORT]` `-port=N` `-proxy=IP:PORT` `-easy` `-solo` `-debug` `-printtoconsole` `-irc` `-noprompt` `-stdin` `-daemon` `-server` `-printblocktree`
+Options: `-datadir=DIR` `-gen` `-addnode=IP[:PORT]` `-port=N` `-proxy=IP:PORT` `-easy` `-solo` `-debug` `-printtoconsole` `-irc` `-noprompt` `-stdin` `-daemon` `-server` `-version` `-printblocktree`
 
 Prompt commands:
 
@@ -123,7 +130,7 @@ Prompt commands:
 | `uptime` | time since start |
 | `stop` | shut down (also `quit`, `exit`, Ctrl-C) |
 
-Logs go to `<datadir>/debug.log` (add `-printtoconsole` to also print them).
+Logs go to `<datadir>/debug.log` (add `-printtoconsole` to also print them). The data directory is created with mode 0700 and every file in it with 0600, because `wallet.dat` holds the private keys unencrypted; keep backups (`backupwallet`) somewhere equally private.
 
 ## Daemon mode and local client
 
@@ -153,7 +160,7 @@ Never mix an `-easy` data directory with a normal one; the node refuses to start
 bash test.sh
 ~~~
 
-Builds from scratch, mines, syncs two nodes, sends coins, restarts both and checks that the wallet and chain survive. It takes a few minutes and uses full CPU. Expected last line: `passed=48 failed=0`. If your libraries are in custom paths, set `MAKEARGS`, for example `MAKEARGS="DB_INC=... DB_LIBDIR=..." bash test.sh`.
+Builds from scratch, mines, syncs two nodes, sends coins, restarts both and checks that the wallet and chain survive. It takes a few minutes and uses full CPU. Expected last line: `passed=59 failed=0`. If your libraries are in custom paths, set `MAKEARGS`, for example `MAKEARGS="DB_INC=... DB_LIBDIR=..." bash test.sh`.
 
 ## What changed from the original
 
