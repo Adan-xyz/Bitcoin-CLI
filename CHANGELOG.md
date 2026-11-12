@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## v0.1.0-cli.4
 - Security: the data directory is created with mode 0700 and all files with 0600 (before, `wallet.dat` was readable by other local users on shared systems); an existing data directory owned by the user is tightened to 0700 on start.
 - `-version` flag; `getinfo` and `getnetworkinfo` show the build id (release tag).
 - `test.sh` no longer kills unrelated `bitcoin -easy` processes; it only touches its own `t1`, `t2`, `t3` directories. 11 more checks (59 in total).
